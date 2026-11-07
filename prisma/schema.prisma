@@ -7,107 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ------------------------------------------------------
-// Enums
-// ------------------------------------------------------
-
-enum RentalCategory {
-  house_flat
-  sublet_room
-}
-
-enum TenantType {
-  family
-  bachelor_male
-  bachelor_female
-  office
-}
-
-enum ParkingType {
-  none
-  car
-  bike
-  car_and_bike
-  garage
-  street
-  not_available
-}
-
-enum GasType {
-  line
-  cylinder
-}
-
-enum ElectricityType {
-  prepaid
-  postpaid
-}
-
-// ------------------------------------------------------
-// Composite Types (MongoDB Embedded Sub-documents)
-// ------------------------------------------------------
-
-type Location {
-  division String
-  district String
-  thana    String
-  area     String
-}
-
-type UtilityBreakdown {
-  baseRent        Float           @default(0.00)
-  electricity     Float           @default(0.00)
-  electricityType ElectricityType
-  gas             Float           @default(0.00)
-  gasType         GasType
-  serviceCharge   Float           @default(0.00)
-  water           Float           @default(0.00)
-}
-
-type ContactInfo {
-  phone          String
-  whatsapp       Boolean @default(false)
-  telegram       Boolean @default(false)
-  imo            Boolean @default(false)
-  teams          Boolean @default(false)
-  telegramHandle String?
-  teamsLink      String?
-}
-
-model Post {
-  id              String           @id @default(auto()) @map("_id") @db.ObjectId
-  title           String
-  description     String
-  category        RentalCategory
-  tenantType      TenantType
-  parking         ParkingType      @default(none)
-  address         String?
-  liveLocationUrl String?
-  images          String[]
-  availableFrom   String
-  pin             String
-  source          String           @default("user")
-  deviceId        String
-  // Embedded Structured Fields
-  location        Location
-  utilities       UtilityBreakdown
-  contact         ContactInfo
-  os              String?
-  browser         String?
-  device          String?
-  ipAddress       String?
-  isDelete        Boolean          @default(false)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-
-  @@index([category, tenantType, os, device, browser, deviceId])
-  @@index([location.division, location.district, location.thana, contact.phone, utilities.baseRent, availableFrom])
-  @@index([createdAt(sort: Desc)])
-  @@index([ipAddress])
-  @@index([pin])
-  @@map("posts")
-}
-
 enum Role {
   ADMIN
   USER
@@ -118,26 +17,33 @@ enum Status {
   BLOCKED
 }
 
+enum QrStatus {
+  PENDING
+  AUTHORIZED
+  EXPIRED
+}
+
 model User {
-  id        String     @id @default(auto()) @map("_id") @db.ObjectId
-  name      String
-  phone     String?
-  city      String?
-  email     String?
-  photo     String?
-  status    Status     @default(ACTIVE)
-  role      Role       @default(USER)
-  os        String?
-  browser   String?
-  device    String?
-  ipAddress String?
-  isOnline  Boolean    @default(false)
-  isVerify  Boolean    @default(false)
-  isDeleted Boolean    @default(false)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  rooms     ListRoom[]
-  saveRoom  SaveRoom[]
+  id           String         @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  phone        String?
+  city         String?
+  email        String?
+  photo        String?
+  status       Status         @default(ACTIVE)
+  role         Role           @default(USER)
+  os           String?
+  browser      String?
+  device       String?
+  ipAddress    String?
+  isOnline     Boolean        @default(false)
+  isVerify     Boolean        @default(false)
+  isDeleted    Boolean        @default(false)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  qrSessions   QrSession[]
+  suppliers    Suppliers[]
+  transactions Transactions[]
 
   @@index([phone, email, status, os, browser, device, isDeleted, isVerify, createdAt])
   @@index([role, city])
@@ -146,101 +52,90 @@ model User {
   @@map("users")
 }
 
-enum PropertyCategory {
-  Family
-  Bachelor
-  Sublet
-  Hostel
-  Office
-}
-
-enum WaterBill {
-  Included
-  Separate
-  Optional
-}
-
-enum GasSupply {
-  LineGas
-  Cylinder
-}
-
-enum ParkingSpace {
-  Available
-  NotAvailable
-  NotSpecified
-}
-
-enum ReportType {
-  Wrong_Number
-  Misleading_Photos
-  Scam_OR_Spam
-}
-
-model reportRoom {
-  id         String     @id @default(auto()) @map("_id") @db.ObjectId
-  ipAddress  String?
-  roomId     String     @db.ObjectId
-  reportType ReportType
-  isDeleted  Boolean    @default(false)
-  listRooms  ListRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
-
-  @@index([ipAddress, roomId])
-  @@map("report_rooms")
-}
-
-model ListRoom {
-  id           String           @id @default(auto()) @map("_id") @db.ObjectId
-  address      String
-  area         String
-  types        PropertyCategory
-  description  String
-  neighborhood String
-  viewCount    Int?             @default(0)
-  reportCount  Int?             @default(0)
-  photos       String[]         @default([])
-  userId       String           @db.ObjectId
-  isDeleted    Boolean          @default(false)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  roomViews    RoomView[]
-  reportRooms  reportRoom[]
-  savedBy      SaveRoom[]
-
-  @@index([userId, types, neighborhood, area])
-  @@index([createdAt(sort: Desc)])
-  @@index([address, isDeleted])
-  @@map("list_rooms")
-}
-
-model RoomView {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  ipAddress String?
-  roomId    String   @db.ObjectId
-  roomViews ListRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  isDeleted Boolean  @default(false)
+model Suppliers {
+  id           String         @id @default(auto()) @map("_id") @db.ObjectId
+  companyName  String
+  name         String?
+  phone        String?
+  address      String?
+  userId       String         @db.ObjectId
+  user         User           @relation(fields: [userId], references: [id])
+  products     Products[]
+  transactions Transactions[]
+isDeleted    Boolean        @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([ipAddress, roomId, isDeleted])
-  @@index([createdAt(sort: Desc)])
-  @@map("room_view")
+  @@index([companyName, phone, address, userId, isDeleted])
+  @@map("suppliers")
 }
 
-model SaveRoom {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId     String   @db.ObjectId
-  listRoomId String   @db.ObjectId
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  listRoom   ListRoom @relation(fields: [listRoomId], references: [id], onDelete: Cascade) // রিলেশন ফিল্ড যুক্ত করা হলো
+model Products {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  productName String
+  quantity    Int
+  price       Float
+  totalAmount Float
+  date        DateTime
+  supplierId  String    @db.ObjectId
+  supplier    Suppliers @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+isDeleted    Boolean        @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  isDeleted Boolean @default(false)
+  @@index([productName, date, supplierId, isDeleted])
+  @@map("supplier_products")
+}
 
-  @@unique([userId, listRoomId])
-  @@index([userId])
-  @@index([listRoomId, isDeleted])
-  @@map("saved_rooms")
+model Transactions {
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  supplierId    String        @db.ObjectId
+  supplier      Suppliers     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  date          DateTime      @default(now())
+  type          TrxType
+  amount        Float
+  paymentMethod PaymentMethod @default(CASH)
+  note          String?
+  userId        String        @db.ObjectId
+  user          User          @relation(fields: [userId], references: [id])
+  isDeleted    Boolean        @default(false)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([supplierId, date, isDeleted])
+  @@map("supplier_transactions")
+}
+
+enum TrxType {
+  PURCHASE
+  PAYMENT
+  RETURN
+  
+}
+
+enum PaymentMethod {
+  CASH
+  BKASH
+  NAGAD
+  BANK
+  CHEQUE
+}
+
+model QrSession {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  sessionId      String    @unique
+  status         QrStatus  @default(PENDING)
+  userId         String?   @db.ObjectId
+  user           User?     @relation(fields: [userId], references: [id])
+  watchTokenHash String?
+  expiresAt      DateTime?
+  browser        String?
+  os             String?
+  device         String?
+  ipAddress      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([sessionId, status, userId])
+  @@map("qr_sessions")
 }

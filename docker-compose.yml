@@ -1,7 +1,7 @@
 services:
   redis:
     image: redis:7-alpine
-    container_name: ts_express_redis
+    container_name: fcm-redis
     restart: always
     ports:
       - "6379:6379"
@@ -14,13 +14,13 @@ services:
 
   backend:
     build: .
-    container_name: ts_express_backend
+    container_name: fcm-backend
     restart: always
     ports:
       - "5000:5000"
     environment:
-      DATABASE_URL: "mongodb+srv://rishabhbhard:7eKDwOTRnV56UIti@cluster0.zmt3m.mongodb.net/rishabhbhard"
-      DIRECT_URL: "mongodb+srv://rishabhbhard:7eKDwOTRnV56UIti@cluster0.zmt3m.mongodb.net/rishabhbhard"
+      DATABASE_URL: "mongodb+srv://contract_management:eIvMMRHLOP5wjaH7@cluster0.wqhd5vt.mongodb.net/fms?retryWrites=true&w=majority"
+      DIRECT_URL: "mongodb+srv://contract_management:eIvMMRHLOP5wjaH7@cluster0.wqhd5vt.mongodb.net/fms?retryWrites=true&w=majority"
       REDIS_HOST: "redis"
       REDIS_PORT: 6379
       REDIS_PASSWORD: "mySecret123"

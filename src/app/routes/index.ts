@@ -1,39 +1,31 @@
 import express from "express";
-import { TestRoutes } from "../modules/testModule/test.route";
-import postRouter from "../modules/HouseListing/houseListing.route";
 import UserRoutes from "../modules/User/user.route";
-import listRoomRouter from "../modules/ListRoom/listRoom.route";
-import SaveRoomRoute from "../modules/SaveRoom/saveRoom.route";
-import ReportRoomRoute from "../modules/ReportRoom/reportRoom.route";
+import SupplierRoutes from "../modules/supplier/supplier.route";
+import ProductsRoutes from "../modules/products/products.route";
+import TransactionsRoutes from "../modules/transactions/transactions.route";
+
 
 
 const router = express.Router();
 
 const moduleRoutes = [
-  {
-    path: "/test",
-    route: TestRoutes,
 
+
+  {
+    path: "/user",
+    route: UserRoutes
   },
   {
-    path: "/house_list",
-    route: postRouter
+    path: "/supplier",
+    route: SupplierRoutes
   },
   {
-    path:"/user",
-    route:UserRoutes
+    path: "/product",
+    route: ProductsRoutes
   },
   {
-    path:"/room_list",
-    route: listRoomRouter
-  },
-  {
-    path:"/save_room",
-    route: SaveRoomRoute
-  },
-  {
-    path:"/report_room",
-    route: ReportRoomRoute
+    path: "/transaction",
+    route: TransactionsRoutes
   }
 
 ];

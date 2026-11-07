@@ -14,7 +14,7 @@ const connectSocket = (server: HTTPServer) => {
   if (!io) {
     io = new ChatServer(server, {
       cors: {
-        origin: '*',
+        origin: config.allowed_origins,
         methods: ['GET', 'POST'],
         credentials: true, 
       },
@@ -30,7 +30,7 @@ const connectSocket = (server: HTTPServer) => {
     let currentUserId: string | null = null;
 
     try {
-      const token = String(socket.handshake.query.token || '').trim();
+      const token = String(socket.handshake.auth?.token || '').trim();
 
       if (token) {
         const decoded = await jwtHelpers.verifyToken(
@@ -40,7 +40,6 @@ const connectSocket = (server: HTTPServer) => {
 
         const userId = decoded?.id;
 
-        // 💡 ফিক্স ১: Prisma-তে সাধারণত userId string বা UUID হয়, তাই এখানে সাধারণ চেক রাখা হয়েছে
         if (!userId) {
           socket.emit('error', { message: 'Invalid token userId' });
           setTimeout(() => socket.disconnect(), 1000); // একটু সময় দিয়ে ডিসকানেক্ট করুন যাতে ফ্রন্টএন্ড এররটি পায়
