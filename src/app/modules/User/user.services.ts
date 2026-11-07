@@ -1,7 +1,8 @@
-import { Role, Status } from "@prisma/client";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "crypto";
+import { QrStatus, Role, Status, User } from "@prisma/client";
 import AppError from "../../errors/AppError";
 import prisma from "../../shared/prisma";
-import { TJwtPayload, TUser } from "./user.interface";
+import { QrAuthorizePayload, QrClientMetadata, QrStatusPayload, TJwtPayload, TUser } from "./user.interface";
 import httpStatus from 'http-status'
 import config from "../../config";
 import { jwtHelpers } from "../../helper/jwtHelpers";
@@ -12,6 +13,26 @@ import fs from 'fs';
 import catchError from "../../errors/catchError";
 import { cacheAside, invalidateCacheDomains } from "../../redis/cache";
 import { cacheKeys, cacheTtlSeconds } from "../../redis/cacheKeys";
+import QRCode from "qrcode";
+
+const createTokenPair = (user: Pick<User, "id" | "role" | "email" | "phone">, sessionId?: string) => {
+    if (!config.jwt_access_secret || !config.jwt_refresh_secret) {
+        throw new AppError(httpStatus.INTERNAL_SERVER_ERROR, "JWT secrets are not configured.");
+    }
+
+    const payload: TJwtPayload = {
+        id: user.id,
+        role: user.role,
+        email: user.email ?? user.phone ?? "",
+        phone: user.phone ?? undefined,
+        ...(sessionId ? { sessionId } : {}),
+    };
+
+    return {
+        accessToken: jwtHelpers.generateToken(payload, config.jwt_access_secret, config.expires_in as string),
+        refreshToken: jwtHelpers.generateToken(payload, config.jwt_refresh_secret, config.refresh_expires_in as string),
+    };
+};
 
 const createUserIntoDb = async (
     payload: Partial<TUser> & Pick<TUser, "email">,
@@ -28,14 +49,14 @@ const createUserIntoDb = async (
     let cityData = null;
     try {
         const ipToCheck = payload.ipAddress ? payload.ipAddress : clientIpAddress || '';
-        
-        console.log("Client IP Address for GeoIP lookup:", ipToCheck);
+
+
         const ipApiUrl = ipToCheck ? `http://ip-api.com/json/${ipToCheck}` : `http://ip-api.com/json/`;
         const response = await fetch(ipApiUrl);
         const data = await response.json();
-       
+
         cityData = data.city || null;
-        
+
     } catch (error) {
         console.error("Failed to fetch IP geolocation:", error);
     }
@@ -51,7 +72,7 @@ const createUserIntoDb = async (
                 isDeleted: true,
                 phone: true,
             },
-        }); 
+        });
 
         if (existingUser) {
             if (existingUser.isDeleted) {
@@ -68,7 +89,6 @@ const createUserIntoDb = async (
                 );
             }
 
-            // Fixed: Throw an AppError instead of returning an untyped object
             if (!existingUser.phone) {
                 throw new AppError(
                     httpStatus.BAD_REQUEST,
@@ -142,7 +162,7 @@ const createUserIntoDb = async (
     const jwtPayload: TJwtPayload = {
         id: user.id,
         role: user.role,
-        email: user.email??"",
+        email: user.email ?? "",
     };
 
     const accessToken = jwtHelpers.generateToken(
@@ -380,25 +400,226 @@ const findMyProfileIntoDb = async (userId: string) => {
     }
 }
 
-const avaterIntoDb=async(userId:string)=>{
+const avaterIntoDb = async (userId: string) => {
+
     try {
-        const  result = await prisma.user.findUnique({
+        const result = await prisma.user.findUnique({
             where: { id: userId },
-            select:{
-                id:true,
-                photo:true ,
-                phone:true,
-                name:true ,
+            select: {
+                id: true,
+                photo: true,
+                email: true ,
+                name: true,
 
             }
         });
 
         return result
 
-        
+
     } catch (error) {
         throw catchError(error, 'Failed to update avatar');
     }
+};
+const qrGenerateIntoDb = async (metadata: QrClientMetadata, clientIpAddress: string) => {
+    try {
+        await prisma.qrSession.updateMany({
+            where: { status: QrStatus.PENDING, expiresAt: { lte: new Date() } },
+            data: { status: QrStatus.EXPIRED },
+        });
+
+        const sessionId = randomUUID();
+        const watchToken = randomBytes(32).toString("base64url");
+        const watchTokenHash = createHash("sha256").update(watchToken).digest("hex");
+        const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
+
+        await prisma.qrSession.create({
+            data: {
+                sessionId,
+                status: QrStatus.PENDING,
+                watchTokenHash,
+                expiresAt,
+                browser: metadata.browser,
+                os: metadata.os,
+                device: metadata.device,
+                ipAddress: clientIpAddress,
+            }
+        });
+
+        const qrCodeImage = await QRCode.toDataURL(sessionId);
+        return { sessionId, qrCodeImage, watchToken, expiresAt };
+
+    } catch (error) {
+        throw catchError(error, 'QR Generation Error');
+    }
+};
+
+const normalizePhone = (phone: string) => phone.replace(/\D/g, "");
+
+const qrAuthorizeIntoDb = async (
+    payload: QrAuthorizePayload,
+    authenticatedUserId: string,
+    clientIpAddress: string
+) => {
+    try {
+        const session = await prisma.qrSession.findUnique({
+            where: { sessionId: payload.sessionId },
+        });
+
+        if (!session) {
+            throw new AppError(httpStatus.NOT_FOUND, "QR session not found.");
+        }
+        if (session.status !== QrStatus.PENDING || !session.expiresAt || session.expiresAt <= new Date()) {
+            if (session.status === QrStatus.PENDING) {
+                await prisma.qrSession.update({
+                    where: { sessionId: session.sessionId },
+                    data: { status: QrStatus.EXPIRED },
+                });
+            }
+            throw new AppError(httpStatus.GONE, "QR session has expired or was already authorized.");
+        }
+
+        const user = await prisma.user.findFirst({
+            where: {
+                id: authenticatedUserId,
+                status: Status.ACTIVE,
+                isDeleted: false,
+                isVerify: true,
+            },
+            select: { id: true, name: true, phone: true, role: true, email: true },
+        });
+        if (!user || !user.phone || normalizePhone(user.phone) !== normalizePhone(payload.phone)) {
+            throw new AppError(httpStatus.FORBIDDEN, "The authenticated account does not match the submitted phone number.");
+        }
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                isOnline: true,
+                ipAddress: session.ipAddress || clientIpAddress,
+                os: session.os || payload.os,
+                browser: session.browser || payload.browser,
+                device: session.device || payload.device,
+            },
+        });
+
+        const claimed = await prisma.qrSession.updateMany({
+            where: {
+                sessionId: session.sessionId,
+                status: QrStatus.PENDING,
+                expiresAt: { gt: new Date() },
+            },
+            data: {
+                status: QrStatus.AUTHORIZED,
+                userId: user.id,
+            },
+        });
+        if (claimed.count !== 1) {
+            throw new AppError(httpStatus.CONFLICT, "QR session was already used or expired.");
+        }
+
+        return { status: QrStatus.AUTHORIZED };
+
+    } catch (error) {
+        throw catchError(error, 'QR Authorization Error');
+    }
+};
+
+const qrStatusIntoDb = async (payload: QrStatusPayload) => {
+    try {
+        const session = await prisma.qrSession.findUnique({
+            where: { sessionId: payload.sessionId },
+        });
+        if (!session || !session.watchTokenHash) {
+            throw new AppError(httpStatus.NOT_FOUND, "QR session not found.");
+        }
+
+        const presentedHash = createHash("sha256").update(payload.watchToken).digest("hex");
+        const expectedHash = Buffer.from(session.watchTokenHash, "hex");
+        const actualHash = Buffer.from(presentedHash, "hex");
+        if (expectedHash.length !== actualHash.length || !timingSafeEqual(expectedHash, actualHash)) {
+            throw new AppError(httpStatus.UNAUTHORIZED, "Invalid QR session watcher token.");
+        }
+
+        const now = new Date();
+        if (!session.expiresAt || session.expiresAt <= now) {
+            if (session.status !== QrStatus.EXPIRED) {
+                await prisma.qrSession.update({
+                    where: { sessionId: session.sessionId },
+                    data: { status: QrStatus.EXPIRED },
+                });
+            }
+            return { status: QrStatus.EXPIRED };
+        }
+        if (session.status !== QrStatus.AUTHORIZED || !session.userId) {
+            return { status: session.status, expiresAt: session.expiresAt };
+        }
+
+        const user = await prisma.user.findFirst({
+            where: {
+                id: session.userId,
+                status: Status.ACTIVE,
+                isDeleted: false,
+                isVerify: true,
+            },
+            select: { id: true, name: true, phone: true, role: true, email: true },
+        });
+        if (!user) {
+            throw new AppError(httpStatus.UNAUTHORIZED, "Authorized account is no longer available.");
+        }
+
+        return {
+            status: QrStatus.AUTHORIZED,
+            ...createTokenPair(user, session.sessionId),
+            user,
+        };
+    } catch (error) {
+        throw catchError(error, "QR status check failed.");
+    }
+};
+
+const refreshTokenIntoDb = async (refreshToken: string) => {
+    if (!config.jwt_refresh_secret) {
+        throw new AppError(httpStatus.INTERNAL_SERVER_ERROR, "JWT refresh secret is not configured.");
+    }
+
+    let decoded: ReturnType<typeof jwtHelpers.verifyToken>;
+    try {
+        decoded = jwtHelpers.verifyToken(refreshToken, config.jwt_refresh_secret);
+    } catch {
+        throw new AppError(httpStatus.UNAUTHORIZED, "Refresh token is invalid or expired.");
+    }
+    if (typeof decoded.id !== "string" || !decoded.id) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "Refresh token payload is invalid.");
+    }
+
+    const user = await prisma.user.findFirst({
+        where: {
+            id: decoded.id,
+            status: Status.ACTIVE,
+            isDeleted: false,
+            isVerify: true,
+        },
+        select: { id: true, name: true, phone: true, role: true, email: true },
+    });
+    if (!user) {
+        throw new AppError(httpStatus.UNAUTHORIZED, "Account is no longer available.");
+    }
+
+    if (!config.jwt_access_secret) {
+        throw new AppError(httpStatus.INTERNAL_SERVER_ERROR, "JWT access secret is not configured.");
+    }
+
+    const payload: TJwtPayload = {
+        id: user.id,
+        role: user.role,
+        email: user.email ?? user.phone ?? "",
+        phone: user.phone ?? undefined,
+    };
+    return {
+        accessToken: jwtHelpers.generateToken(payload, config.jwt_access_secret, config.expires_in as string),
+        user,
+    };
 };
 
 const UserService = {
@@ -406,7 +627,11 @@ const UserService = {
     createAccountIntoDb,
     changeProfilePictureIntoDB,
     findMyProfileIntoDb,
-    avaterIntoDb
+    avaterIntoDb,
+    qrGenerateIntoDb,
+    qrAuthorizeIntoDb,
+    qrStatusIntoDb,
+    refreshTokenIntoDb
 };
 
 export default UserService;

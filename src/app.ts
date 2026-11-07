@@ -7,21 +7,15 @@ import notFound from "./app/middlewares/notFound";
 import cookieParser from "cookie-parser";
 import monitorRouter, { recordRequestMetrics } from "./app/utils/metrics/metricsMiddleware";
 import systemArtc from "./app/utils/metrics/systemArtc";
-import autoDeleteAvailableFrom from "./app/utils/autoDeleteavailableFrom";
-import autoDeleteRoomList from "./app/utils/metrics/autoDeleteRoomList";
+import config from "./app/config";
+
 
 const app: Application = express();
 
 // CORS কনফিগারেশন সংশোধন করা হয়েছে
 app.use(
   cors({
-    origin: [
-      "https://thikana-sand.vercel.app",
-      "http://localhost:8080",
-      "http://localhost:5173",
-      "http://localhost:3000",
-      "https://myroom-finder.vercel.app"
-    ],
+    origin: config.allowed_origins,
     credentials: true,
   })
 );
@@ -38,17 +32,8 @@ app.use("/api/v1/monitor", monitorRouter);
 app.get("/", (req: Request, res: Response) => {
   res.send(systemArtc());
 });
-cron.schedule("*/30 * * * *", () => {
-  void autoDeleteAvailableFrom().catch((error) => {
-    console.error("Scheduled available-from cleanup failed", error);
-  });
-});
-cron.schedule("*/30 * * * *", async () => {
+;
 
-
-  await autoDeleteRoomList()
-
-})
 app.use(globalErrorHandler);
 
 app.use(notFound);

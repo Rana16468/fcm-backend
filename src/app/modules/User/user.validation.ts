@@ -50,12 +50,12 @@ const createAdminAccountZodSchema = z.object({
       .min(10, 'Phone number must be at least 10 digits'),
 
     password: z
-      .string({error:"Password is required"})
+      .string({ error: "Password is required" })
       .min(6, 'Password must be at least 6 characters'),
-      
+
 
     email: z
-      .string({error:"Email is required"})
+      .string({ error: "Email is required" })
       .email('Invalid email address')
       .or(z.literal('')),
 
@@ -83,14 +83,39 @@ const updateUserZodSchema = z.object({
     browser: z.string().optional(),
     device: z.string().optional(),
     photo: z.string().optional(),
-    
+
+  }),
+});
+
+const qrAuthorizeValidationSchema = z.object({
+  body: z.object({
+    sessionId: z.string({
+      error: "Session ID is required",
+    }),
+    phone: z.string({
+      error: "Phone number is required",
+    }).min(10, "Phone number must be valid"),
+    name: z.string().optional(),
+    os: z.string().optional(),
+    browser: z.string().optional(),
+    device: z.string().optional(),
+    ipAddress: z.string().optional(),
+  }),
+});
+
+const qrStatusValidationSchema = z.object({
+  body: z.object({
+    sessionId: z.string().min(1, "Session ID is required"),
+    watchToken: z.string().min(32, "Invalid QR session watcher token"),
   }),
 });
 
 export const UserValidation = {
   createUserZodSchema,
   updateUserZodSchema,
-  createAdminAccountZodSchema
+  createAdminAccountZodSchema,
+  qrAuthorizeValidationSchema,
+  qrStatusValidationSchema
 };
 
 export default UserValidation;

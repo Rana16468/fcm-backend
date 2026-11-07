@@ -6,6 +6,15 @@ dotenv.config({ path: path.join(process.cwd(), ".env") });
 export default {
   port: process.env.PORT || 5000,
   host: process.env.HOST || '0.0.0.0',
+  
+  frontend_url: process.env.FRONTEND_URL,
+  allowed_origins: [
+    process.env.FRONTEND_URL,
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://localhost:3000"
+  ].filter((origin): origin is string => Boolean(origin)),
   file_path: process.env.FILE_PATH,
   database_url: process.env.DATABASE_URL,
   NODE_ENV: process.env.NODE_ENV,
@@ -14,6 +23,7 @@ export default {
   expires_in: process.env.EXPIRES_IN,
   jwt_refresh_secret: process.env.JWT_REFRESH_SECRET,
   refresh_expires_in: process.env.REFRESH_EXPIRES_IN,
+  refresh_cookie_max_age_ms: Number(process.env.REFRESH_COOKIE_MAX_AGE_MS) || 30 * 24 * 60 * 60 * 1000,
   cloudinary: {
     cloud_name: process.env.CLOUDINARY_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,

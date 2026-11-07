@@ -1,0 +1,1 @@
+export const searchableFields = ['companyName', 'name', 'phone', 'address'];

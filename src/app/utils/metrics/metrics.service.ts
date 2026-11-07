@@ -42,12 +42,7 @@ class MetricsService {
     let listingTotal: number | null = null;
     let listingsToday: number | null = null;
     try {
-      [listingTotal, listingsToday] = await Promise.all([
-        prisma.post.count({ where: { isDelete: false } }),
-        prisma.post.count({
-          where: { isDelete: false, createdAt: { gte: startOfToday } },
-        }),
-      ]);
+     
     } catch (error) {
       console.error("Failed to load listing metrics:", error);
     }

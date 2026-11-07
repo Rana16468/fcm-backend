@@ -13,22 +13,22 @@ import UserController from './user.controller';
 const router = express.Router();
 
 router.post('/create-user',
-    validationRequest(UserValidation.createUserZodSchema),
-    UserController.createUser
+  validationRequest(UserValidation.createUserZodSchema),
+  UserController.createUser
 );
 router.post('/create-admin-account',
-    auth(Role.ADMIN),
-    validationRequest(UserValidation.createAdminAccountZodSchema),
-    UserController.createAccount
+  auth(Role.ADMIN),
+  validationRequest(UserValidation.createAdminAccountZodSchema),
+  UserController.createAccount
 );
 
 router.patch('/change-profile-picture',
-     auth(Role.ADMIN, Role.USER),
-     upload.fields([{ name: "photo", maxCount: 1 }]),
-     compressImage({ maxWidth: 1200, quality: 80 }), 
-     (req: Request, _res: Response, next: NextFunction) => {
+  auth(Role.ADMIN, Role.USER),
+  upload.fields([{ name: "photo", maxCount: 1 }]),
+  compressImage({ maxWidth: 1200, quality: 80 }),
+  (req: Request, _res: Response, next: NextFunction) => {
     try {
-    
+
       if (req.body?.data) {
         req.body = JSON.parse(req.body.data);
       }
@@ -37,7 +37,7 @@ router.patch('/change-profile-picture',
         [fieldname: string]: Express.Multer.File[];
       };
 
-    
+
       const photo = files?.photo?.[0];
 
       if (photo) {
@@ -49,18 +49,38 @@ router.patch('/change-profile-picture',
       next(new AppError(httpStatus.BAD_REQUEST, "Invalid request data", error));
     }
   },
-   
-    validationRequest(UserValidation.updateUserZodSchema),
-    UserController.changeProfilePicture
+
+  validationRequest(UserValidation.updateUserZodSchema),
+  UserController.changeProfilePicture
 );
 
 router.get('/my-profile',
-    auth(Role.ADMIN, Role.USER),
-    UserController.findMyProfile
+  auth(Role.ADMIN, Role.USER),
+  UserController.findMyProfile
 );
 router.get('/avater',
-    auth(Role.ADMIN, Role.USER),
-    UserController.avater
+  auth(Role.ADMIN, Role.USER),
+  UserController.avater
+);
+
+router.get('/qr-generate',
+  UserController.qrGenerate
+);
+
+router.post('/qr-authorize',
+  auth(Role.ADMIN, Role.USER),
+  validationRequest(UserValidation.qrAuthorizeValidationSchema),
+  UserController.qrAuthorize
+);
+router.post('/qr-status',
+  validationRequest(UserValidation.qrStatusValidationSchema),
+  UserController.qrStatus
+);
+router.post('/refresh-token',
+  UserController.refreshToken
+);
+router.post('/logout',
+  UserController.logout
 );
 
 
