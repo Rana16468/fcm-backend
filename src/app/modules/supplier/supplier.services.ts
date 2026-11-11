@@ -47,6 +47,16 @@ const getSuppliersFromDb = async (userId: string, query: QueryParams) => {
                 orderBy: builtQuery.orderBy,
                 skip: builtQuery.skip,
                 take: builtQuery.take,
+                select: {
+                    id: true,
+                    companyName: true,
+                    name: true,
+                    phone: true,
+                    address: true,
+
+                    createdAt: true,
+                    updatedAt: true,
+                },
             }),
             prisma.suppliers.count({
                 where: builtQuery.where,
@@ -128,7 +138,7 @@ const deleteSupplierFromDb = async (userId: string, supplierId: string) => {
 
         return { message: "Supplier and all associated records deleted successfully." };
     } catch (error) {
-        // কোনো একটি স্টেপে ফেইল করলে ট্রানজেকশন অটোমেটিক রোলব্যাক হয়ে যাবে এবং এরর থ্রো করবে
+     
         throw catchError(error);
     }
 };

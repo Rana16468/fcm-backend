@@ -102,26 +102,33 @@ const getTransactionsFromDb = async (userId: string, query: QueryParams) => {
         queryBuilder.filter(['supplierId', 'type']);
         queryBuilder.scope({ userId, isDeleted: false });
 
-        const builtQuery = queryBuilder.build('date');
+        // Build query without wrong sorting
+        const builtQuery = queryBuilder.build();
 
-        // ১. ডেট ওয়াইজ ফিল্টারিং হ্যান্ডেল করা
+        // Fix sorting: Always sort by createdAt (latest entry first)
+        builtQuery.orderBy = {
+            createdAt: 'desc'
+        };
+
         const { startDate, endDate } = query;
         if (startDate || endDate) {
             builtQuery.where.date = {};
             if (startDate) {
-                builtQuery.where.date.gte = new Date(startDate as string);
+                const start = new Date(startDate as string);
+                start.setHours(0, 0, 0, 0); // Start of the day
+                builtQuery.where.date.gte = start;
             }
             if (endDate) {
-                builtQuery.where.date.lte = new Date(endDate as string);
+                const end = new Date(endDate as string);
+                end.setHours(23, 59, 59, 999); // End of the day
+                builtQuery.where.date.lte = end;
             }
         }
 
-        // ২. সরাসরি ডাটাবেজ থেকে কুয়েরি চালিয়ে ডেটা এবং সাম বের করা
         const [data, total, totalAmountSum, typeWiseSum] = await Promise.all([
-            // ক. ট্রানজেকশন লিস্ট ফেচ করা
             prisma.transactions.findMany({
                 where: builtQuery.where,
-                orderBy: builtQuery.orderBy,
+                orderBy: builtQuery.orderBy, // Now correctly ordered by latest entry/createdAt desc
                 skip: builtQuery.skip,
                 take: builtQuery.take,
                 select: {
@@ -132,21 +139,24 @@ const getTransactionsFromDb = async (userId: string, query: QueryParams) => {
                     amount: true,
                     paymentMethod: true,
                     note: true,
+                    supplier: {
+                        select: {
+                            name: true,
+                            phone: true,
+                            companyName: true
+                        }
+                    },
                     createdAt: true,
                     updatedAt: true,
                 }
             }),
             prisma.transactions.count({ where: builtQuery.where }),
-
-
             prisma.transactions.aggregate({
                 where: builtQuery.where,
                 _sum: {
                     amount: true,
                 },
             }),
-
-
             prisma.transactions.groupBy({
                 by: ['type'],
                 where: builtQuery.where,

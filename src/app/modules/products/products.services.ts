@@ -32,6 +32,7 @@ const createProductIntoDb = async (payload: CreateProductPayload, userId: string
         await prisma.products.create({
             data: {
                 ...payload,
+                userId,
                 date: payload.date instanceof Date ? payload.date : new Date(payload.date),
                 totalAmount: payload.quantity * payload.price,
             },
@@ -48,13 +49,24 @@ const createProductIntoDb = async (payload: CreateProductPayload, userId: string
 const getProductsFromDb = async (userId: string, query: QueryParams) => {
     try {
         const queryBuilder = new QueryBuilder(query);
-        queryBuilder.search(searchableFields);
-        queryBuilder.filter(['supplierId']);
+        queryBuilder.search(searchableFields); // searchableFields তোমার প্রয়োজনমতো ডিফাইন করা থাকবে
 
-        queryBuilder.scope({
+        // যদি supplierId পাঠানো হয়, তবেই ফিল্টার করবে
+        if (query.supplierId) {
+            queryBuilder.filter(['supplierId']);
+        }
+
+        // স্কোপ সেটআপ
+        const scopeConditions: any = {
             isDeleted: false,
             supplier: { is: { userId, isDeleted: false } },
-        });
+        };
+
+        if (query.supplierId) {
+            scopeConditions.supplierId = query.supplierId;
+        }
+
+        queryBuilder.scope(scopeConditions);
 
         const builtQuery = queryBuilder.build('createdAt');
 
@@ -91,17 +103,16 @@ const getProductsFromDb = async (userId: string, query: QueryParams) => {
             prisma.products.aggregate({
                 where: builtQuery.where,
                 _sum: {
-                    totalAmount: true, // ফিল্টারিং করা ডেটার টোটাল অ্যামাউন্ট যোগ করবে
+                    totalAmount: true,
                 },
             }),
         ]);
-
 
         const grandTotalAmount = aggregationResult._sum.totalAmount || 0;
 
         return {
             meta: meta(total, builtQuery),
-            totalAmount: grandTotalAmount, // রেসপন্সে টোটাল অ্যামাউন্ট যুক্ত করে দেওয়া হলো
+            totalAmount: grandTotalAmount,
             data,
         };
     } catch (error) {
@@ -194,12 +205,89 @@ const deleteProductFromDb = async (userId: string, productId: string) => {
     }
 };
 
+
+const getMyAllProductsFromDb = async (userId: string, query: QueryParams) => {
+    try {
+        const queryBuilder = new QueryBuilder(query);
+        queryBuilder.search(searchableFields); 
+
+        
+        const scopeConditions: any = {
+            isDeleted: false,
+            supplier: { is: { userId, isDeleted: false } },
+        };
+
+       
+        queryBuilder.scope(scopeConditions);
+
+        const builtQuery = queryBuilder.build('createdAt');
+
+        const { startDate, endDate } = query;
+        if (startDate || endDate) {
+            builtQuery.where.date = {};
+            if (startDate) {
+                builtQuery.where.date.gte = new Date(startDate as string);
+            }
+            if (endDate) {
+                builtQuery.where.date.lte = new Date(endDate as string);
+            }
+        }
+
+        const [data, total, aggregationResult] = await Promise.all([
+            prisma.products.findMany({
+                where: builtQuery.where,
+                select: {
+                    id: true,
+                    productName: true,
+                    quantity: true,
+                    price: true,
+                    totalAmount: true,
+                    supplierId:true,
+                    date: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    supplier:{
+                        select:{
+                             name:true ,
+                             companyName:true ,
+                             address:true ,
+                             phone:true
+                        }
+                    }
+                },
+                orderBy: builtQuery.orderBy,
+                skip: builtQuery.skip,
+                take: builtQuery.take,
+            }),
+            prisma.products.count({ where: builtQuery.where }),
+
+            prisma.products.aggregate({
+                where: builtQuery.where,
+                _sum: {
+                    totalAmount: true,
+                },
+            }),
+        ]);
+
+        const grandTotalAmount = aggregationResult._sum.totalAmount || 0;
+
+        return {
+            meta: meta(total, builtQuery),
+            totalAmount: grandTotalAmount,
+            data,
+        };
+    } catch (error) {
+        throw catchError(error);
+    }
+};
+
 const ProductsServices = {
     createProductIntoDb,
     getProductsFromDb,
     findProductByIdFromDb,
     updateProductIntoDb,
     deleteProductFromDb,
+    getMyAllProductsFromDb
 };
 
 export default ProductsServices;

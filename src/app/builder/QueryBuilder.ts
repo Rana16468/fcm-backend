@@ -1,14 +1,13 @@
 export type QueryParams = Record<string, unknown>;
 
 export interface BuiltQuery {
-  where: Record<string, any>; // unknown এর জায়গায় any দিন
+  where: Record<string, any>;
   orderBy: Record<string, 'asc' | 'desc'>;
   skip: number;
   take: number;
   page: number;
   limit: number;
 }
-
 
 export class QueryBuilder {
   private query: QueryParams;
@@ -18,12 +17,25 @@ export class QueryBuilder {
     this.query = query;
   }
 
-  search(fields: string[]) {
+ search(fields: string[]) {
     const term = this.query.searchTerm as string | undefined;
     if (term && fields.length) {
-      this.where.OR = fields.map((f) => ({
-        [f]: { contains: term, mode: 'insensitive' },
-      }));
+      this.where.OR = fields.map((f) => {
+        // যদি ফিল্ডের নামের মধ্যে ডট (.) থাকে (যেমন: supplier.name), 
+        // তবে সেটাকে নেস্টেড অবজেক্ট আকারে হ্যান্ডেল করবে
+        if (f.includes('.')) {
+          const [relation, field] = f.split('.');
+          return {
+            [relation]: {
+              [field]: { contains: term, mode: 'insensitive' },
+            },
+          };
+        }
+        // অন্যথায় মেইন টেবিলের ফিল্ড হলে সাধারণ নিয়মে সার্চ করবে
+        return {
+          [f]: { contains: term, mode: 'insensitive' },
+        };
+      });
     }
     return this;
   }
@@ -66,5 +78,3 @@ export const meta = (total: number, q: BuiltQuery) => ({
   total,
   totalPage: Math.ceil(total / q.limit),
 });
-
-
