@@ -44,8 +44,11 @@ model User {
   qrSessions   QrSession[]
   suppliers    Suppliers[]
   transactions Transactions[]
+<<<<<<< HEAD
   products     Products[]
   invoices     Invoices[]
+=======
+>>>>>>> b4fb4a61e0711510cdb09f3ee18956ce424c9c3b
 
   @@index([phone, email, status, os, browser, device, isDeleted, isVerify, createdAt])
   @@index([role, city])
@@ -64,6 +67,7 @@ model Suppliers {
   user         User           @relation(fields: [userId], references: [id])
   products     Products[]
   transactions Transactions[]
+<<<<<<< HEAD
   isDeleted    Boolean        @default(false)
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
@@ -176,6 +180,82 @@ model QrSession {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+=======
+isDeleted    Boolean        @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyName, phone, address, userId, isDeleted])
+  @@map("suppliers")
+}
+
+model Products {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  productName String
+  quantity    Int
+  price       Float
+  totalAmount Float
+  date        DateTime
+  supplierId  String    @db.ObjectId
+  supplier    Suppliers @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+isDeleted    Boolean        @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productName, date, supplierId, isDeleted])
+  @@map("supplier_products")
+}
+
+model Transactions {
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  supplierId    String        @db.ObjectId
+  supplier      Suppliers     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  date          DateTime      @default(now())
+  type          TrxType
+  amount        Float
+  paymentMethod PaymentMethod @default(CASH)
+  note          String?
+  userId        String        @db.ObjectId
+  user          User          @relation(fields: [userId], references: [id])
+  isDeleted    Boolean        @default(false)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([supplierId, date, isDeleted])
+  @@map("supplier_transactions")
+}
+
+enum TrxType {
+  PURCHASE
+  PAYMENT
+  RETURN
+  
+}
+
+enum PaymentMethod {
+  CASH
+  BKASH
+  NAGAD
+  BANK
+  CHEQUE
+}
+
+model QrSession {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  sessionId      String    @unique
+  status         QrStatus  @default(PENDING)
+  userId         String?   @db.ObjectId
+  user           User?     @relation(fields: [userId], references: [id])
+  watchTokenHash String?
+  expiresAt      DateTime?
+  browser        String?
+  os             String?
+  device         String?
+  ipAddress      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+>>>>>>> b4fb4a61e0711510cdb09f3ee18956ce424c9c3b
   @@index([sessionId, status, userId])
   @@map("qr_sessions")
 }

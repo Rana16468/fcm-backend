@@ -47,16 +47,6 @@ const getSuppliersFromDb = async (userId: string, query: QueryParams) => {
                 orderBy: builtQuery.orderBy,
                 skip: builtQuery.skip,
                 take: builtQuery.take,
-                select: {
-                    id: true,
-                    companyName: true,
-                    name: true,
-                    phone: true,
-                    address: true,
-
-                    createdAt: true,
-                    updatedAt: true,
-                },
             }),
             prisma.suppliers.count({
                 where: builtQuery.where,
