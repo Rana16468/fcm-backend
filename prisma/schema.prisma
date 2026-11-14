@@ -44,11 +44,9 @@ model User {
   qrSessions   QrSession[]
   suppliers    Suppliers[]
   transactions Transactions[]
-<<<<<<< HEAD
   products     Products[]
   invoices     Invoices[]
-=======
->>>>>>> b4fb4a61e0711510cdb09f3ee18956ce424c9c3b
+  expenses     Expenses[]
 
   @@index([phone, email, status, os, browser, device, isDeleted, isVerify, createdAt])
   @@index([role, city])
@@ -67,7 +65,6 @@ model Suppliers {
   user         User           @relation(fields: [userId], references: [id])
   products     Products[]
   transactions Transactions[]
-<<<<<<< HEAD
   isDeleted    Boolean        @default(false)
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
@@ -77,20 +74,21 @@ model Suppliers {
 }
 
 model Products {
-  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
   productName     String?
   quantity        Int
-  sellingProducts Int?      @default(0)
+  sellingProducts Int?          @default(0)
   price           Float
   totalAmount     Float
   date            DateTime
-  userId          String    @db.ObjectId
-  user            User      @relation(fields: [userId], references: [id])
-  supplierId      String    @db.ObjectId
-  supplier        Suppliers @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  isDeleted       Boolean   @default(false)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  userId          String        @db.ObjectId
+  user            User          @relation(fields: [userId], references: [id])
+  supplierId      String        @db.ObjectId
+  supplier        Suppliers     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  isDeleted       Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  invoiceItem     InvoiceItem[]
 
   @@index([productName, date, supplierId, isDeleted])
   @@map("supplier_products")
@@ -155,89 +153,49 @@ model Invoices {
 }
 
 model InvoiceItem {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  invoiceId       String   @db.ObjectId
-  invoice         Invoices @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  
-  productId       String   @db.ObjectId 
-  productQuantity Int      
-  
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceId String   @db.ObjectId
+  invoice   Invoices @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  productId String @db.ObjectId
+
+  products        Products @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productQuantity Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId, productId])
   @@map("invoice_items")
 }
 
-model QrSession {
-  id             String    @id @default(auto()) @map("_id") @db.ObjectId
-  sessionId      String    @unique
-  status         QrStatus  @default(PENDING)
-  userId         String?   @db.ObjectId
-  user           User?     @relation(fields: [userId], references: [id])
-  watchTokenHash String?
-  expiresAt      DateTime?
-  browser        String?
-  os             String?
-  device         String?
-  ipAddress      String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-=======
-isDeleted    Boolean        @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([companyName, phone, address, userId, isDeleted])
-  @@map("suppliers")
+enum ExpenseCategory {
+  SALARY_AND_WAGES // Employee/Worker salaries, bonuses, overtime
+  FACTORY_RENT // Production plant or warehouse rent
+  OFFICE_RENT // Corporate or administrative office rent
+  UTILITIES // Electricity, gas, water, internet
+  MAINTENANCE_AND_REPAIR // Machinery, vehicle, and building maintenance
+  TRANSPORTATION // Shipping, freight, fuel, delivery costs
+  OFFICE_SUPPLIES // Stationery, daily pantry/refreshment costs
+  MARKETING_AND_SALES // Advertisements, promotions, client meetings
+  TAXES_AND_FEES // Government taxes, trade licenses, legal fees
+  MISCELLANEOUS // Uncategorized daily operational expenses
+  Others
 }
 
-model Products {
-  id          String    @id @default(auto()) @map("_id") @db.ObjectId
-  productName String
-  quantity    Int
-  price       Float
-  totalAmount Float
-  date        DateTime
-  supplierId  String    @db.ObjectId
-  supplier    Suppliers @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-isDeleted    Boolean        @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Expenses {
+  id          String          @id @default(auto()) @map("_id") @db.ObjectId
+  expenseName String?
+  amount      Float
+  category    ExpenseCategory
+  date        DateTime        @default(now())
+  userId      String          @db.ObjectId
+  user        User            @relation(fields: [userId], references: [id])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
-  @@index([productName, date, supplierId, isDeleted])
-  @@map("supplier_products")
-}
-
-model Transactions {
-  id            String        @id @default(auto()) @map("_id") @db.ObjectId
-  supplierId    String        @db.ObjectId
-  supplier      Suppliers     @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  date          DateTime      @default(now())
-  type          TrxType
-  amount        Float
-  paymentMethod PaymentMethod @default(CASH)
-  note          String?
-  userId        String        @db.ObjectId
-  user          User          @relation(fields: [userId], references: [id])
-  isDeleted    Boolean        @default(false)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-
-  @@index([supplierId, date, isDeleted])
-  @@map("supplier_transactions")
-}
-
-enum TrxType {
-  PURCHASE
-  PAYMENT
-  RETURN
-  
-}
-
-enum PaymentMethod {
-  CASH
-  BKASH
-  NAGAD
-  BANK
-  CHEQUE
+  @@index([expenseName, category, date, userId])
+  @@map("expenses")
 }
 
 model QrSession {
@@ -255,7 +213,6 @@ model QrSession {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
->>>>>>> b4fb4a61e0711510cdb09f3ee18956ce424c9c3b
   @@index([sessionId, status, userId])
   @@map("qr_sessions")
 }

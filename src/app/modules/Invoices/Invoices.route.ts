@@ -34,6 +34,8 @@ router.delete("/delete-invoices/:id",
     InvoicesController.deleteInvoice
 )
 
+router.get("/find-my-all-customer", auth(Role.ADMIN, Role.USER), InvoicesController.findMyAllCustomer)
+
 const InvoicesRouter = router;
 
 export default InvoicesRouter;

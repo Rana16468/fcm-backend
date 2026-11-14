@@ -4,6 +4,7 @@ import SupplierRoutes from "../modules/supplier/supplier.route";
 import ProductsRoutes from "../modules/products/products.route";
 import TransactionsRoutes from "../modules/transactions/transactions.route";
 import InvoicesRouter from "../modules/Invoices/Invoices.route";
+import ExpensesRouter from "../modules/expenses/expenses.route";
 
 
 
@@ -31,6 +32,10 @@ const moduleRoutes = [
   {
     path: "/invoices",
     route: InvoicesRouter
+  },
+  {
+    path: "/expenses",
+    route: ExpensesRouter
   }
 
 ];

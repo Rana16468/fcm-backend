@@ -17,24 +17,19 @@ export class QueryBuilder {
     this.query = query;
   }
 
- search(fields: string[]) {
-    const term = this.query.searchTerm as string | undefined;
-    if (term && fields.length) {
-      this.where.OR = fields.map((f) => {
-        // যদি ফিল্ডের নামের মধ্যে ডট (.) থাকে (যেমন: supplier.name), 
-        // তবে সেটাকে নেস্টেড অবজেক্ট আকারে হ্যান্ডেল করবে
-        if (f.includes('.')) {
-          const [relation, field] = f.split('.');
-          return {
-            [relation]: {
-              [field]: { contains: term, mode: 'insensitive' },
-            },
-          };
-        }
-        // অন্যথায় মেইন টেবিলের ফিল্ড হলে সাধারণ নিয়মে সার্চ করবে
-        return {
-          [f]: { contains: term, mode: 'insensitive' },
-        };
+  search(fields: string[]) {
+    const term = this.query.searchTerm;
+    if (typeof term === 'string' && term.trim() && fields.length) {
+      const searchTerm = term.trim();
+      this.where.OR = fields.map((field) => {
+        const path = field.split('.');
+        const leaf = path.pop() as string;
+        const condition = { [leaf]: { contains: searchTerm, mode: 'insensitive' } };
+
+        return path.reduceRight<Record<string, unknown>>(
+          (nested, relation) => ({ [relation]: nested }),
+          condition,
+        );
       });
     }
     return this;
@@ -43,7 +38,11 @@ export class QueryBuilder {
   filter(allowed: string[]) {
     for (const key of allowed) {
       const value = this.query[key];
-      if (value !== undefined && value !== '' && value !== null) {
+      if (
+        (typeof value === 'string' && value.trim() !== '') ||
+        typeof value === 'number' ||
+        typeof value === 'boolean'
+      ) {
         this.where[key] = value;
       }
     }
@@ -55,11 +54,20 @@ export class QueryBuilder {
     return this;
   }
 
-  build(defaultSort = 'createdAt'): BuiltQuery {
-    const page = Math.max(1, Number(this.query.page ?? 1));
-    const limit = Math.min(100, Math.max(1, Number(this.query.limit ?? 10)));
-    const sortBy = (this.query.sortBy as string) || defaultSort;
-    const sortOrder = (this.query.sortOrder as 'asc' | 'desc') === 'asc' ? 'asc' : 'desc';
+  build(defaultSort = 'createdAt', allowedSortFields?: readonly string[]): BuiltQuery {
+    const requestedPage = Number(this.query.page ?? 1);
+    const requestedLimit = Number(this.query.limit ?? 10);
+    const page = Number.isFinite(requestedPage) ? Math.max(1, Math.trunc(requestedPage)) : 1;
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(100, Math.max(1, Math.trunc(requestedLimit)))
+      : 10;
+    const requestedSort = this.query.sortBy;
+    const sortBy =
+      typeof requestedSort === 'string' &&
+      (!allowedSortFields || allowedSortFields.includes(requestedSort))
+        ? requestedSort
+        : defaultSort;
+    const sortOrder = this.query.sortOrder === 'asc' ? 'asc' : 'desc';
 
     return {
       where: this.where,
