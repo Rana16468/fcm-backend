@@ -61,6 +61,18 @@ const deleteInvoice: RequestHandler = catchAsync(async (req, res) => {
         message: 'Delete Invoices  Successfully',
         data: result,
     });
+});
+
+const findMyAllCustomer: RequestHandler = catchAsync(async (req, res) => {
+
+    const result = await InvoicesServices.findMyAllCustomerIntoDb(req.query, req.user.id);
+    sendResponse(res, {
+        statusCode: status.OK,
+        success: true,
+        message: 'Successfully Find By All Customer',
+        data: result,
+    });
+
 })
 
 const InvoicesController = {
@@ -68,6 +80,7 @@ const InvoicesController = {
     findMyAllInvoice,
     findMySpecificInvoices,
     updateInvoices,
-    deleteInvoice
+    deleteInvoice,
+    findMyAllCustomer
 };
 export default InvoicesController
