@@ -3,6 +3,8 @@ import status from 'http-status';
 import catchAsync from '../../utils/asyncCatch';
 import sendResponse from '../../utils/sendResponse';
 import TransactionsServices from './transactions.services';
+import { GroupBy } from './transactions.interface';
+import AppError from '../../errors/AppError';
 
 const createTransaction: RequestHandler = catchAsync(async (req, res) => {
   const result = await TransactionsServices.createTransactionIntoDb(req.body, req.user.id);
@@ -64,12 +66,45 @@ const deleteTransaction: RequestHandler = catchAsync(async (req, res) => {
   });
 });
 
+
+/* ---------------- Period shortcut helpers (Asia/Dhaka) ---------------- */
+
+
+
+/* ---------------- Controller ---------------- */
+
+const getFinancialReport: RequestHandler = catchAsync(async (req, res) => {
+
+  const result = await TransactionsServices.financialReportIntoDb(req.user.id, req.query);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: 'Financial report fetched successfully',
+    data: result,
+  });
+});
+
+const getFinancialReportOne: RequestHandler = catchAsync(async (req, res) => {
+
+  const result = await TransactionsServices.financialReportOneIntoDb(req.user.id, req.query);
+
+  sendResponse(res, {
+    statusCode: status.OK,
+    success: true,
+    message: 'Financial report fetched successfully',
+    data: result,
+  });
+});
+
 const TransactionsController = {
   createTransaction,
   getTransactions,
   findTransactionById,
   updateTransaction,
   deleteTransaction,
+  getFinancialReport,
+  getFinancialReportOne
 };
 
 export default TransactionsController;

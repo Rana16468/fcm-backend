@@ -88,6 +88,7 @@ const getProductsFromDb = async (userId: string, query: QueryParams) => {
                     id: true,
                     productName: true,
                     quantity: true,
+                    sellingProducts:true,
                     price: true,
                     totalAmount: true,
                     date: true,

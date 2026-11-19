@@ -5,6 +5,7 @@ import ProductsRoutes from "../modules/products/products.route";
 import TransactionsRoutes from "../modules/transactions/transactions.route";
 import InvoicesRouter from "../modules/Invoices/Invoices.route";
 import ExpensesRouter from "../modules/expenses/expenses.route";
+import InsightsRouter from "../modules/Insights/Insights.route";
 
 
 
@@ -36,6 +37,10 @@ const moduleRoutes = [
   {
     path: "/expenses",
     route: ExpensesRouter
+  },
+  {
+    path: "/insights",
+    route: InsightsRouter
   }
 
 ];

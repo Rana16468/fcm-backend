@@ -33,4 +33,12 @@ router.delete(
   TransactionsController.deleteTransaction,
 );
 
+router.get(
+  '/invoices-report',
+  auth(Role.ADMIN, Role.USER),
+  TransactionsController.getFinancialReport,
+);
+
+router.get("/financial-report", auth(Role.USER, Role.USER), TransactionsController.getFinancialReportOne)
+
 export default router;

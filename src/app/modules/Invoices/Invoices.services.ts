@@ -76,6 +76,7 @@ const recordedInvoicesIntoDb = async (
                             customerName: payload.customerName,
                             phone: payload.phone,
                             productName: payload.productName,
+                            remainingBalnace:payload.remainingBalnace,
                             // নতুন রিলেশন অনুযায়ী InvoiceItem টেবিল এ ডাটা সেভ হচ্ছে
                             invoiceItems: {
                                 create: productItems.map(item => ({
@@ -164,7 +165,8 @@ const findMyAllInvoiceIntoDb = async (query: Record<string, unknown>, userId: st
                 date: true,
                 phone: true,
                 status: true,
-                invoiceItems: { // নতুন রিলেশন থেকে প্রোডাক্ট ও কোয়ান্টিটি সিলেক্ট করা হলো
+                remainingBalnace: true,
+                invoiceItems: {
                     select: {
                         productId: true,
                         productQuantity: true,
@@ -213,6 +215,7 @@ const findMySpecificInvoicesIntoDb = async (id: string) => {
                 date: true,
                 phone: true,
                 status: true,
+                remainingBalnace: true,
                 invoiceItems: {
                     select: {
                         productId: true,
@@ -324,6 +327,7 @@ const updateInvoicesIntoDb = async (
                     customerName: payload.customerName ?? existingInvoice.customerName,
                     phone: payload.phone ?? existingInvoice.phone,
                     productName: payload.productName ?? existingInvoice.productName,
+                    remainingBalnace:payload.remainingBalnace,
                     ...(payload.productListId && {
                         invoiceItems: {
                             create: newItems.map(item => ({
@@ -427,7 +431,7 @@ const findMyAllCustomerIntoDb = async (query: Record<string, unknown>, userId: s
                 date: true,
                 phone: true,
                 status: true,
-
+                remainingBalnace:true,
 
                 invoiceItems: {
                     select: {

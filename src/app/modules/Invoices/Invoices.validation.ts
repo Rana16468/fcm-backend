@@ -21,7 +21,8 @@ const createInvoiceValidationSchema = z.object({
         date: z.string({ error: "date is required" }),
         amount: z.number({
             error: "Amount is required",
-        }).positive("Amount must be greater than 0")
+        }).positive("Amount must be greater than 0"),
+        remainingBalnace: z.number().default(0).optional()
     })
 });
 

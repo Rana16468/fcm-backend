@@ -35,6 +35,11 @@ router.delete("/delete-supplier/:supplierId",
     auth(Role.ADMIN, Role.USER),
     SupplierController.deleteSupplier
 );
+router.get("/dashboard", auth(Role.ADMIN, Role.USER), SupplierController.dashboardReport);
+router.get("/calculate-account/:supplierId",
+    auth(Role.ADMIN, Role.USER),
+    SupplierController.calculateSupplierAccountBlance
+)
 
 const SupplierRoutes = router;
 export default SupplierRoutes;

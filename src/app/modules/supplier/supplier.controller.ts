@@ -61,13 +61,38 @@ const deleteSupplier: RequestHandler = catchAsync(async (req, res) => {
     });
 });
 
+const dashboardReport: RequestHandler = catchAsync(async (req, res) => {
+
+    const result = await SupplierServices.dashboardReportIntoDb(req.user.id, req.query);
+    sendResponse(res, {
+        statusCode: status.OK,
+        success: true,
+        message: " Successfully Find My Dadhboard Report",
+        data: result,
+    });
+});
+
+
+const calculateSupplierAccountBlance:RequestHandler=catchAsync(async (req, res) => {
+
+    const result = await SupplierServices.calculateSupplierAccountBlanceIntoDb(req.user.id, req.params.supplierId as string);
+    sendResponse(res, {
+        statusCode: status.OK,
+        success: true,
+        message: " Successfully Find Blance  Statment ",
+        data: result,
+    });
+});
+
 
 const SupplierController = {
     RecordedSuppliers,
     getSuppliers,
     findBySupplierId,
     updateSupplier,
-    deleteSupplier
+    deleteSupplier,
+    dashboardReport,
+    calculateSupplierAccountBlance
 };
 
 export default SupplierController;
