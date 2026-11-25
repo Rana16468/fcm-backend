@@ -3,7 +3,8 @@ import { z } from 'zod';
 
 const productQuentity = z.object({
     productId: z.string({ error: "productId is required" }),
-    productQuentity: z.number({ error: "productQuentity is required" }).int("productQuentity must be an integer")
+    productQuentity: z.number({ error: "productQuentity is required" }).int("productQuentity must be an integer"),
+    amount: z.number().optional()
 });
 
 const createInvoiceValidationSchema = z.object({
@@ -21,7 +22,7 @@ const createInvoiceValidationSchema = z.object({
         date: z.string({ error: "date is required" }),
         amount: z.number({
             error: "Amount is required",
-        }).positive("Amount must be greater than 0"),
+        }).positive("Amount must be greater than 0").default(0).optional(),
         remainingBalnace: z.number().default(0).optional()
     })
 });

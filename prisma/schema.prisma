@@ -24,29 +24,30 @@ enum QrStatus {
 }
 
 model User {
-  id           String         @id @default(auto()) @map("_id") @db.ObjectId
-  name         String
-  phone        String?
-  city         String?
-  email        String?
-  photo        String?
-  status       Status         @default(ACTIVE)
-  role         Role           @default(USER)
-  os           String?
-  browser      String?
-  device       String?
-  ipAddress    String?
-  isOnline     Boolean        @default(false)
-  isVerify     Boolean        @default(false)
-  isDeleted    Boolean        @default(false)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  qrSessions   QrSession[]
-  suppliers    Suppliers[]
-  transactions Transactions[]
-  products     Products[]
-  invoices     Invoices[]
-  expenses     Expenses[]
+  id               String          @id @default(auto()) @map("_id") @db.ObjectId
+  name             String
+  phone            String?
+  city             String?
+  email            String?
+  photo            String?
+  status           Status          @default(ACTIVE)
+  role             Role            @default(USER)
+  os               String?
+  browser          String?
+  device           String?
+  ipAddress        String?
+  isOnline         Boolean         @default(false)
+  isVerify         Boolean         @default(false)
+  isDeleted        Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  qrSessions       QrSession[]
+  suppliers        Suppliers[]
+  transactions     Transactions[]
+  products         Products[]
+  invoices         Invoices[]
+  expenses         Expenses[]
+  businessProfiles BusinessProfile?
 
   @@index([phone, email, status, os, browser, device, isDeleted, isVerify, createdAt])
   @@index([role, city])
@@ -158,8 +159,8 @@ model InvoiceItem {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   invoiceId String   @db.ObjectId
   invoice   Invoices @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-
-  productId String @db.ObjectId
+  amount    Float    @default(0.00)
+  productId String   @db.ObjectId
 
   products        Products @relation(fields: [productId], references: [id], onDelete: Cascade)
   productQuantity Int
@@ -167,7 +168,7 @@ model InvoiceItem {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  @@index([invoiceId, productId])
+  @@index([invoiceId, productId, isDeleted])
   @@map("invoice_items")
 }
 
@@ -199,6 +200,33 @@ model Expenses {
 
   @@index([expenseName, category, date, userId])
   @@map("expenses")
+}
+
+enum BusinesType {
+  RetailShop
+  GroceryShop
+  Restaurent
+  ECommerce
+  Freelancer
+  ServiceBusiness
+  Startup
+  Maunfacturing
+  CorporateBusiness
+  Others
+}
+
+model BusinessProfile {
+  id           String       @id @default(auto()) @map("_id") @db.ObjectId
+  businessName String?
+  businessType BusinesType?
+  userId       String       @unique @db.ObjectId
+  user         User         @relation(fields: [userId], references: [id])
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  isDeleted    Boolean      @default(false)
+
+  @@index([businessName, businessType])
+  @@map("buisness_profile")
 }
 
 model QrSession {

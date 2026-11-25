@@ -1,8 +1,8 @@
-import { Suppliers } from "@prisma/client";
+import { Prisma, Suppliers } from "@prisma/client";
 import catchError from "../../errors/catchError";
 import prisma from "../../shared/prisma";
 import { meta, QueryBuilder, QueryParams } from "../../builder/QueryBuilder";
-import { searchableFields } from "./supplier.constant";
+import { asPipeline, isoDate, mongoRound, searchableFields, SORTABLE, Stage, sumIf, ZERO_SUMMARY } from "./supplier.constant";
 import status from "http-status";
 import AppError from "../../errors/AppError";
 
@@ -30,39 +30,174 @@ const RecordedSuppliersIntoDb = async (payload: Suppliers, userId: string) => {
 
 };
 
+
+
+
+
+
 const getSuppliersFromDb = async (userId: string, query: QueryParams) => {
     try {
         const queryBuilder = new QueryBuilder(query);
-
-        queryBuilder.search(searchableFields);
-
-        queryBuilder.filter(['isDeleted']);
-        queryBuilder.scope({ userId, isDeleted: false });
-
         const builtQuery = queryBuilder.build('createdAt');
 
-        const [result, total] = await Promise.all([
-            prisma.suppliers.findMany({
-                where: builtQuery.where,
-                orderBy: builtQuery.orderBy,
-                skip: builtQuery.skip,
-                take: builtQuery.take,
-            }),
-            prisma.suppliers.count({
-                where: builtQuery.where,
-            }),
-        ]);
+
+        const q = query as Record<string, unknown>;
+        const term = typeof (q.searchTerm ?? q.search) === "string" ? String(q.searchTerm ?? q.search).trim() : "";
+        const regex = { $regex: term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
+
+        const search: Stage = term
+            ? { $or: [{ companyName: regex }, { name: regex }, { phone: regex }, { address: regex }] }
+            : {};
+
+        const sortField = SORTABLE.includes(String(q.sortBy)) ? String(q.sortBy) : "createdAt";
+        const sortDir = q.sortOrder === "asc" ? 1 : -1;
+
+        const user = { $oid: userId };
+
+
+        const listPipeline: Stage[] = [
+            { $match: { userId: user, isDeleted: false, ...search } },
+            {
+                $facet: {
+                    data: [
+                        { $sort: { [sortField]: sortDir, _id: 1 } },
+                        { $skip: builtQuery.skip ?? 0 },
+                        { $limit: builtQuery.take ?? 10 },
+
+                        {
+                            $lookup: {
+                                from: "supplier_products",
+                                localField: "_id",
+                                foreignField: "supplierId",
+                                pipeline: [
+                                    { $match: { userId: user, isDeleted: false } },
+                                    { $group: { _id: null, total: { $sum: "$totalAmount" } } },
+                                ],
+                                as: "purchase",
+                            },
+                        },
+
+                        {
+                            $lookup: {
+                                from: "supplier_transactions",
+                                localField: "_id",
+                                foreignField: "supplierId",
+                                pipeline: [
+                                    { $match: { userId: user, isDeleted: false } },
+                                    {
+                                        $group: {
+                                            _id: null,
+                                            paid: sumIf({ $eq: ["$type", "PAYMENT"] }, "$amount"),
+                                            returned: sumIf({ $eq: ["$type", "RETURN"] }, "$amount"),
+                                        },
+                                    },
+                                ],
+                                as: "trx",
+                            },
+                        },
+                        {
+                            $addFields: {
+                                totalPurchase: { $ifNull: [{ $arrayElemAt: ["$purchase.total", 0] }, 0] },
+                                totalPaid: { $ifNull: [{ $arrayElemAt: ["$trx.paid", 0] }, 0] },
+                                totalReturn: { $ifNull: [{ $arrayElemAt: ["$trx.returned", 0] }, 0] },
+                            },
+                        },
+
+                        {
+                            $addFields: {
+                                balance: {
+                                    $subtract: [{ $subtract: ["$totalPurchase", "$totalPaid"] }, "$totalReturn"],
+                                },
+                            },
+                        },
+                        {
+                            $project: {
+                                _id: 0,
+                                id: { $toString: "$_id" },
+                                companyName: 1,
+                                name: { $ifNull: ["$name", null] },
+                                phone: { $ifNull: ["$phone", null] },
+                                address: { $ifNull: ["$address", null] },
+                                isDeleted: 1,
+                                createdAt: isoDate("$createdAt"),
+                                updatedAt: isoDate("$updatedAt"),
+                                account: {
+                                    totalPurchase: mongoRound("$totalPurchase"), // মোট কত টাকার মাল কিনেছি
+                                    totalPaid: mongoRound("$totalPaid"), // মোট কত টাকা পেমেন্ট করেছি
+                                    totalReturn: mongoRound("$totalReturn"), // মোট কত টাকার মাল ফেরত দিয়েছি
+                                    payable: mongoRound({ $max: ["$balance", 0] }), // সাপ্লায়ার আমার কাছে যত পাবে
+                                    advance: mongoRound({ $max: [{ $multiply: ["$balance", -1] }, 0] }), // বেশি দিয়েছি, সাপ্লায়ার ফেরত দেবে
+                                },
+                            },
+                        },
+                    ],
+                    total: [{ $count: "n" }],
+                },
+            },
+            {
+                $project: {
+                    data: 1,
+                    total: { $ifNull: [{ $arrayElemAt: ["$total.n", 0] }, 0] },
+                },
+            },
+        ];
+        const summaryPipeline: Stage[] = [
+            { $match: { userId: user, isDeleted: false } },
+            { $group: { _id: null, totalPurchase: { $sum: "$totalAmount" } } },
+            {
+                $unionWith: {
+                    coll: "supplier_transactions",
+                    pipeline: [
+                        { $match: { userId: user, isDeleted: false } },
+                        {
+                            $group: {
+                                _id: null,
+                                totalPaid: sumIf({ $eq: ["$type", "PAYMENT"] }, "$amount"),
+                                totalReturn: sumIf({ $eq: ["$type", "RETURN"] }, "$amount"),
+                            },
+                        },
+                    ],
+                },
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalPurchase: { $sum: "$totalPurchase" },
+                    totalPaid: { $sum: "$totalPaid" },
+                    totalReturn: { $sum: "$totalReturn" },
+                },
+            },
+            {
+                $project: {
+                    _id: 0,
+                    totalPurchase: mongoRound("$totalPurchase"),
+                    totalPaid: mongoRound("$totalPaid"),
+                    totalReturn: mongoRound("$totalReturn"),
+                    totalPayable: mongoRound({
+                        $max: [0, { $subtract: [{ $subtract: ["$totalPurchase", "$totalPaid"] }, "$totalReturn"] }],
+                    }),
+                },
+            },
+        ];
+
+        const [[list], [summary]] = (await Promise.all([
+            prisma.suppliers.aggregateRaw({ pipeline: asPipeline(listPipeline) }),
+            prisma.products.aggregateRaw({ pipeline: asPipeline(summaryPipeline) }),
+        ])) as unknown as [
+                [{ data: unknown[]; total: number }],
+                [Record<string, number> | undefined],
+            ];
 
         return {
-            meta: meta(total, builtQuery),
-            data: result,
+            meta: meta(list.total, builtQuery),
+            summary: summary ?? ZERO_SUMMARY,
+            data: list.data,
         };
 
     } catch (error) {
         throw catchError(error);
     }
 };
-
 
 const findBySupplierIdFromDb = async (userId: string, supplierId: string) => {
     try {
@@ -161,6 +296,7 @@ const range = (from: string, to: string) => ({ date: { $gte: at(from), $lte: at(
 
 const MONTH_KEY = { $dateToString: { format: "%Y-%m", date: "$date", timezone: TZ } };
 
+// Invoice amount = মোট বিক্রয়মূল্য (item.amount এর যোগফল)
 const REMAINING = { $cond: [{ $eq: ["$status", "REMAINING"] }, { $ifNull: ["$remainingBalnace", 0] }, 0] };
 const UNPAID = { $cond: [{ $eq: ["$status", "UNPAID"] }, "$amount", 0] };
 const DUE = { $add: [REMAINING, UNPAID] };
@@ -238,11 +374,33 @@ const dashboardReportIntoDb = async (userId: string, query: Record<string, any>)
                             },
                         },
                     ],
+                    // COGS = বিক্রিত পরিমাণ × কেনা দাম (supplier_products.price)
                     cogs: [
                         { $match: period },
-                        { $lookup: { from: "invoice_items", localField: "_id", foreignField: "invoiceId", as: "item" } },
+                        { $project: { _id: 1 } },
+                        {
+                            $lookup: {
+                                from: "invoice_items",
+                                let: { id: "$_id" },
+                                pipeline: [
+                                    { $match: { $expr: { $eq: ["$invoiceId", "$$id"] }, isDeleted: { $ne: true } } },
+                                    { $project: { _id: 0, productId: 1, productQuantity: 1 } },
+                                ],
+                                as: "item",
+                            },
+                        },
                         { $unwind: "$item" },
-                        { $lookup: { from: "supplier_products", localField: "item.productId", foreignField: "_id", as: "p" } },
+                        {
+                            $lookup: {
+                                from: "supplier_products",
+                                let: { pid: "$item.productId" },
+                                pipeline: [
+                                    { $match: { $expr: { $eq: ["$_id", "$$pid"] } } },
+                                    { $project: { _id: 0, price: 1 } },
+                                ],
+                                as: "p",
+                            },
+                        },
                         { $unwind: "$p" },
                         { $group: { _id: null, total: { $sum: { $multiply: ["$item.productQuantity", "$p.price"] } } } },
                     ],
@@ -331,7 +489,8 @@ const dashboardReportIntoDb = async (userId: string, query: Record<string, any>)
     const collected = cur?.paid ?? 0;
     const totalExpenses = (exp.byCategory as any[]).reduce((s, r) => s + r.total, 0);
     const cogs = inv.cogs[0]?.total ?? 0;
-    const netProfit = totalSales - cogs - totalExpenses;
+    const grossProfit = totalSales - cogs; // বিক্রয় − কেনা দাম
+    const netProfit = grossProfit - totalExpenses; // gross profit − খরচ
 
     const prevSales = inv.previous[0]?.sales ?? 0;
     const revenueGrowth = prevSales ? percent(totalSales - prevSales, prevSales) : null;
@@ -350,6 +509,9 @@ const dashboardReportIntoDb = async (userId: string, query: Record<string, any>)
 
         kpis: {
             totalSales: round(totalSales),
+            cogs: round(cogs),
+            grossProfit: round(grossProfit),
+            grossMargin: percent(grossProfit, totalSales),
             collected: round(collected),
             due: round(cur?.due),
             totalExpenses: round(totalExpenses),
@@ -406,7 +568,7 @@ const calculateSupplierAccountBlanceIntoDb = async (userId: string, supplierId: 
                     id: true
                 }
             }),
-           
+
             prisma.products.aggregate({
                 where: {
                     supplierId,

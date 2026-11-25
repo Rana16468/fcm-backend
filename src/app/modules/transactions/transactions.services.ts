@@ -344,52 +344,87 @@ const toTotals = (keys: string[], rows: Record<string, any>[]) =>
     Object.fromEntries(keys.map((k) => [k, round(rows.find((r) => r._id === k)?.total)]));
 
 const sumValues = (obj: Record<string, number>) => round(Object.values(obj).reduce((s, v) => s + v, 0));
+const sumAmounts = (rows: { amount: number }[]) => round(rows.reduce((s, r) => s + r.amount, 0));
 
 const groupByField = (field: string) => [
-    { $group: { _id: `$${field}`, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+    { $group: { _id: `$${field}`, total: { $sum: "$amount" } } },
 ];
+
+const run = async (model: any, pipeline: Record<string, any>[]) =>
+    (await model.aggregateRaw({ pipeline })) as unknown as Record<string, any>[];
 
 const financialReportOneIntoDb = async (userId: string, query: Record<string, any>) => {
     const { startDate, endDate } = query;
 
-    const match = {
-        userId: { $oid: userId },
-        isDeleted: false,
-        ...(startDate && {
-            date: { $gte: toDate(startDate), $lte: toDate(endDate ?? startDate, true) },
-        }),
-    };
+    const baseMatch = { userId: { $oid: userId }, isDeleted: { $ne: true } };
+    const dateMatch = startDate
+        ? { date: { $gte: toDate(startDate), $lte: toDate(endDate ?? startDate, true) } }
+        : null;
+    const match = { ...baseMatch, ...(dateMatch ?? {}) };
+    const inPeriod = dateMatch ? [{ $match: dateMatch }] : []; // facet এর ভেতরে ব্যবহার হবে
 
-    const run = async (model: any, pipeline: Record<string, any>[]) =>
-        (await model.aggregateRaw({ pipeline })) as unknown as Record<string, any>[];
-
-    const [[sales], expenseRows, [trxFacet], [products], [cogsRow], totalSuppliers] = await Promise.all([
-        // ১. Invoices
+    const [[inv], expenseRows, [trxFacet], [prodFacet], totalSuppliers] = await Promise.all([
+        // ১. Invoices: সামারি + COGS এক পাসে
         run(prisma.invoices, [
             { $match: match },
             {
-                $group: {
-                    _id: null,
-                    totalInvoices: { $sum: 1 },
-                    totalSales: { $sum: "$amount" },
-                    totalPaid: {
-                        $sum: {
-                            $switch: {
-                                branches: [
-                                    { case: { $eq: ["$status", "PAID"] }, then: "$amount" },
-                                    {
-                                        case: { $eq: ["$status", "REMAINING"] },
-                                        then: { $subtract: ["$amount", { $ifNull: ["$remainingBalnace", 0] }] },
+                $facet: {
+                    summary: [
+                        {
+                            $group: {
+                                _id: null,
+                                totalInvoices: { $sum: 1 },
+                                totalSales: { $sum: "$amount" },
+                                totalPaid: {
+                                    $sum: {
+                                        $switch: {
+                                            branches: [
+                                                { case: { $eq: ["$status", "PAID"] }, then: "$amount" },
+                                                {
+                                                    case: { $eq: ["$status", "REMAINING"] },
+                                                    then: { $subtract: ["$amount", { $ifNull: ["$remainingBalnace", 0] }] },
+                                                },
+                                            ],
+                                            default: 0,
+                                        },
                                     },
-                                ],
-                                default: 0,
+                                },
+                                totalRemaining: {
+                                    $sum: { $cond: [{ $eq: ["$status", "REMAINING"] }, { $ifNull: ["$remainingBalnace", 0] }, 0] },
+                                },
+                                totalUnpaid: { $sum: { $cond: [{ $eq: ["$status", "UNPAID"] }, "$amount", 0] } },
                             },
                         },
-                    },
-                    totalRemaining: {
-                        $sum: { $cond: [{ $eq: ["$status", "REMAINING"] }, { $ifNull: ["$remainingBalnace", 0] }, 0] },
-                    },
-                    totalUnpaid: { $sum: { $cond: [{ $eq: ["$status", "UNPAID"] }, "$amount", 0] } },
+                    ],
+                    // COGS = বিক্রিত পরিমাণ × কেনা দাম
+                    cogs: [
+                        { $project: { _id: 1 } },
+                        {
+                            $lookup: {
+                                from: "invoice_items",
+                                let: { id: "$_id" },
+                                pipeline: [
+                                    { $match: { $expr: { $eq: ["$invoiceId", "$$id"] }, isDeleted: { $ne: true } } },
+                                    { $project: { _id: 0, productId: 1, productQuantity: 1 } },
+                                ],
+                                as: "item",
+                            },
+                        },
+                        { $unwind: "$item" },
+                        {
+                            $lookup: {
+                                from: "supplier_products",
+                                let: { pid: "$item.productId" },
+                                pipeline: [
+                                    { $match: { $expr: { $eq: ["$_id", "$$pid"] } } },
+                                    { $project: { _id: 0, price: 1 } },
+                                ],
+                                as: "p",
+                            },
+                        },
+                        { $unwind: "$p" },
+                        { $group: { _id: null, total: { $sum: { $multiply: ["$item.productQuantity", "$p.price"] } } } },
+                    ],
                 },
             },
         ]),
@@ -397,46 +432,65 @@ const financialReportOneIntoDb = async (userId: string, query: Record<string, an
         // ২. Expenses (ক্যাটাগরি অনুযায়ী)
         run(prisma.expenses, [{ $match: match }, ...groupByField("category")]),
 
-        // ৩. Transactions (টাইপ ও পেমেন্ট মেথড অনুযায়ী, এক কুয়েরিতে)
+        // ৩. Transactions: পিরিয়ডের টাইপ/মেথড + সর্বকালের settled (দেনা হিসাবের জন্য)
         run(prisma.transactions, [
-            { $match: match },
-            { $facet: { byType: groupByField("type"), byMethod: groupByField("paymentMethod") } },
-        ]),
-
-        // ৪. Products
-        run(prisma.products, [
-            { $match: match },
+            { $match: baseMatch },
             {
-                $group: {
-                    _id: null,
-                    totalProducts: { $sum: 1 },
-                    totalAmount: { $sum: "$totalAmount" },
-                    totalQuantity: { $sum: "$quantity" },
-                    totalSoldQuantity: { $sum: { $ifNull: ["$sellingProducts", 0] } },
-                    stockValue: {
-                        $sum: {
-                            $multiply: [{ $subtract: ["$quantity", { $ifNull: ["$sellingProducts", 0] }] }, "$price"],
-                        },
-                    },
+                $facet: {
+                    byType: [...inPeriod, ...groupByField("type")],
+                    byMethod: [...inPeriod, ...groupByField("paymentMethod")],
+                    settled: [
+                        { $match: { type: { $in: ["PAYMENT", "RETURN"] } } },
+                        { $group: { _id: null, total: { $sum: "$amount" } } },
+                    ],
                 },
             },
         ]),
 
-        // ৫. COGS (বিক্রিত পণ্যের কেনা দাম)
-        run(prisma.invoices, [
-            { $match: match },
-            { $lookup: { from: "invoice_items", localField: "_id", foreignField: "invoiceId", as: "item" } },
-            { $unwind: "$item" },
-            { $lookup: { from: "supplier_products", localField: "item.productId", foreignField: "_id", as: "product" } },
-            { $unwind: "$product" },
-            { $group: { _id: null, cogs: { $sum: { $multiply: ["$item.productQuantity", "$product.price"] } } } },
+        // ৪. Products: পিরিয়ডের কেনা + সর্বকালের স্টক ও মোট কেনা
+        run(prisma.products, [
+            { $match: baseMatch },
+            {
+                $facet: {
+                    period: [
+                        ...inPeriod,
+                        {
+                            $group: {
+                                _id: null,
+                                totalProducts: { $sum: 1 },
+                                totalAmount: { $sum: "$totalAmount" },
+                                totalQuantity: { $sum: "$quantity" },
+                                totalSoldQuantity: { $sum: { $ifNull: ["$sellingProducts", 0] } },
+                            },
+                        },
+                    ],
+                    stock: [
+                        {
+                            $group: {
+                                _id: null,
+                                quantity: { $sum: { $subtract: ["$quantity", { $ifNull: ["$sellingProducts", 0] }] } },
+                                value: {
+                                    $sum: {
+                                        $multiply: [{ $subtract: ["$quantity", { $ifNull: ["$sellingProducts", 0] }] }, "$price"],
+                                    },
+                                },
+                            },
+                        },
+                    ],
+                    purchased: [{ $group: { _id: null, total: { $sum: "$totalAmount" } } }],
+                },
+            },
         ]),
 
-        // ৬. সাপ্লায়ার সংখ্যা
+        // ৫. সাপ্লায়ার সংখ্যা
         prisma.suppliers.count({ where: { userId, isDeleted: false } }),
     ]);
 
     // ---------- বেসিক হিসাব ----------
+    const sales = inv?.summary?.[0];
+    const products = prodFacet?.period?.[0];
+    const stock = prodFacet?.stock?.[0];
+
     const expenseByCategory = toTotals(EXPENSE_CATEGORIES, expenseRows);
     const totalExpenses = sumValues(expenseByCategory);
 
@@ -447,7 +501,10 @@ const financialReportOneIntoDb = async (userId: string, query: Record<string, an
     const totalPaid = sales?.totalPaid ?? 0;
     const totalReceivable = (sales?.totalRemaining ?? 0) + (sales?.totalUnpaid ?? 0);
     const purchaseAmount = products?.totalAmount ?? 0;
-    const cogs = cogsRow?.cogs ?? 0;
+    const cogs = inv?.cogs?.[0]?.total ?? 0;
+
+    // সর্বকালের দেনা (ড্যাশবোর্ডের সাথে মিলবে)
+    const allTimePayable = Math.max(0, (prodFacet?.purchased?.[0]?.total ?? 0) - (trxFacet?.settled?.[0]?.total ?? 0));
 
     // ---------- লেজার (Debit / Credit) ----------
     const credit = [
@@ -458,16 +515,16 @@ const financialReportOneIntoDb = async (userId: string, query: Record<string, an
         { head: "Supplier Payment (সাপ্লায়ারকে পেমেন্ট)", amount: trxByType.PAYMENT },
         ...EXPENSE_CATEGORIES.map((c) => ({ head: `Expense: ${c}`, amount: expenseByCategory[c] })),
     ];
-    const totalCredit = sumValues(Object.fromEntries(credit.map((c, i) => [i, c.amount])));
-    const totalDebit = sumValues(Object.fromEntries(debit.map((d, i) => [i, d.amount])));
+    const totalCredit = sumAmounts(credit);
+    const totalDebit = sumAmounts(debit);
     const closingBalance = round(totalCredit - totalDebit);
 
     // ---------- লাভ-ক্ষতি তুলনা ----------
+    const grossProfit = totalSales - cogs;
     const totalCost = cogs + totalExpenses;
     const netProfit = totalSales - totalCost;
 
     return {
-
         period: { startDate: startDate ?? null, endDate: endDate ?? startDate ?? null },
 
         sales: {
@@ -482,12 +539,12 @@ const financialReportOneIntoDb = async (userId: string, query: Record<string, an
         expenses: { ...expenseByCategory, totalExpenses },
 
         products: {
-            totalProducts: products?.totalProducts ?? 0,
-            totalAmount: round(purchaseAmount),
-            totalQuantity: products?.totalQuantity ?? 0,
+            totalProducts: products?.totalProducts ?? 0, // পিরিয়ডে কেনা
+            totalAmount: round(purchaseAmount), // পিরিয়ডে কেনা
+            totalQuantity: products?.totalQuantity ?? 0, // পিরিয়ডে কেনা
             totalSoldQuantity: products?.totalSoldQuantity ?? 0,
-            remainingStockQuantity: (products?.totalQuantity ?? 0) - (products?.totalSoldQuantity ?? 0),
-            stockValue: round(products?.stockValue),
+            remainingStockQuantity: stock?.quantity ?? 0, // সর্বকালের বর্তমান স্টক
+            stockValue: round(stock?.value), // সর্বকালের বর্তমান স্টক মূল্য
         },
 
         transactions: {
@@ -500,7 +557,8 @@ const financialReportOneIntoDb = async (userId: string, query: Record<string, an
             totalPurchase: round(purchaseAmount),
             totalPayment: trxByType.PAYMENT,
             totalReturn: trxByType.RETURN,
-            totalPayable: round(purchaseAmount - trxByType.PAYMENT - trxByType.RETURN),
+            totalPayable: round(allTimePayable), // সর্বকালের দেনা
+            periodPayable: round(purchaseAmount - trxByType.PAYMENT - trxByType.RETURN), // শুধু এই পিরিয়ডের
         },
 
         ledger: {
@@ -513,7 +571,8 @@ const financialReportOneIntoDb = async (userId: string, query: Record<string, an
         profitAndLoss: {
             totalSales: round(totalSales),
             costOfGoodsSold: round(cogs),
-            grossProfit: round(totalSales - cogs),
+            grossProfit: round(grossProfit),
+            grossMargin: percent(grossProfit, totalSales),
             totalExpenses,
             netProfit: round(netProfit),
         },

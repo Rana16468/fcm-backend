@@ -9,6 +9,7 @@ import { BuiltQuery, meta, QueryBuilder } from "../../builder/QueryBuilder";
 export type ProductQuantityPayload = {
     productId: string;
     productQuentity: number;
+    amount: number
 };
 
 // ১. ইনভয়েস রেকর্ড বা ক্রিয়েট করার ফাংশন
@@ -76,12 +77,13 @@ const recordedInvoicesIntoDb = async (
                             customerName: payload.customerName,
                             phone: payload.phone,
                             productName: payload.productName,
-                            remainingBalnace:payload.remainingBalnace,
+                            remainingBalnace: payload.remainingBalnace,
                             // নতুন রিলেশন অনুযায়ী InvoiceItem টেবিল এ ডাটা সেভ হচ্ছে
                             invoiceItems: {
                                 create: productItems.map(item => ({
                                     productId: item.productId,
                                     productQuantity: item.productQuentity,
+                                    amount: item.amount
                                 })),
                             },
                         },
@@ -105,6 +107,7 @@ const recordedInvoicesIntoDb = async (
                     customerName: payload.customerName,
                     phone: payload.phone,
                     productName: payload.productName,
+                    remainingBalnace: payload.remainingBalnace
                 },
             });
 
@@ -166,12 +169,6 @@ const findMyAllInvoiceIntoDb = async (query: Record<string, unknown>, userId: st
                 phone: true,
                 status: true,
                 remainingBalnace: true,
-                invoiceItems: {
-                    select: {
-                        productId: true,
-                        productQuantity: true,
-                    }
-                },
                 createdAt: true,
                 updatedAt: true
             }
@@ -220,6 +217,7 @@ const findMySpecificInvoicesIntoDb = async (id: string) => {
                     select: {
                         productId: true,
                         productQuantity: true,
+                        amount: true
                     }
                 },
                 createdAt: true,
@@ -241,7 +239,6 @@ const updateInvoicesIntoDb = async (
 ) => {
     try {
         return await prisma.$transaction(async (tx) => {
-            // ১. ইনভয়েস ও তার প্রিভিয়াস আইটেমগুলো একসাথে ফেচ করা
             const existingInvoice = await tx.invoices.findFirst({
                 where: { id: invoiceId, userId },
                 select: {
@@ -327,12 +324,13 @@ const updateInvoicesIntoDb = async (
                     customerName: payload.customerName ?? existingInvoice.customerName,
                     phone: payload.phone ?? existingInvoice.phone,
                     productName: payload.productName ?? existingInvoice.productName,
-                    remainingBalnace:payload.remainingBalnace,
+                    remainingBalnace: payload.remainingBalnace,
                     ...(payload.productListId && {
                         invoiceItems: {
                             create: newItems.map(item => ({
                                 productId: item.productId,
                                 productQuantity: item.productQuentity,
+                                amount: item.amount
                             })),
                         },
                     }),
@@ -431,14 +429,14 @@ const findMyAllCustomerIntoDb = async (query: Record<string, unknown>, userId: s
                 date: true,
                 phone: true,
                 status: true,
-                remainingBalnace:true,
+                remainingBalnace: true,
 
-                invoiceItems: {
-                    select: {
+                // invoiceItems: {
+                //     select: {
 
-                        productQuantity: true,
-                    }
-                },
+                //         productQuantity: true,
+                //     }
+                // },
                 createdAt: true,
                 updatedAt: true
             }

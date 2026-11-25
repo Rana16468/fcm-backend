@@ -62,6 +62,17 @@ const getMyAllProducts: RequestHandler = catchAsync(async (req, res) => {
         message: 'Find My All Product Successfully',
         data: result,
     });
+});
+
+const winningProduct:RequestHandler=catchAsync(async(req , res)=>{
+
+    const result=await ProductsServices.winningProductFromDb(req.user.id, req.query);
+    sendResponse(res, {
+        statusCode: status.OK,
+        success: true,
+        message: 'Find My All Product Successfully',
+        data: result,
+    });
 })
 
 const ProductsController = {
@@ -70,7 +81,8 @@ const ProductsController = {
     findProductById,
     updateProduct,
     deleteProduct,
-    getMyAllProducts
+    getMyAllProducts,
+    winningProduct
 };
 
 export default ProductsController;

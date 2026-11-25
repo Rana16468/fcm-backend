@@ -2,21 +2,6 @@ import { Prisma } from "@prisma/client";
 import prisma from "../../shared/prisma";
 
 
-/**
- * সব হিসাব, ফিল্টার ও পেজিনেশন MongoDB-র ভেতরে aggregation pipeline দিয়ে হয়।
- * Node.js-এ কোনো map / forEach / reduce / filter নেই।
- *
- * প্রয়োজনীয়তা: MongoDB 4.4+ ($replaceAll, $unionWith)
- * কালেকশন (স্কিমার @@map অনুযায়ী): supplier_products, invoices, expenses, supplier_transactions
- *
- * সব API-র কমন কোয়েরি:
- *   startDate=YYYY-MM-DD  endDate=YYYY-MM-DD   (ঢাকা সময়, দুটোই ঐচ্ছিক ও inclusive)
- *   page, limit                                  (যেসব API-তে তালিকা আছে)
- */
-
-/* -------------------------------------------------------------------------- */
-/*                               ইউটিলিটি                                       */
-/* -------------------------------------------------------------------------- */
 
 type Stage = Record<string, unknown>;
 type Query = Record<string, unknown>;
@@ -128,6 +113,20 @@ const ymd = (field: string) => ({
 const sumIf = (cond: unknown, value: unknown) => ({
   $sum: { $cond: [cond, value, 0] },
 });
+
+/**
+ * ইনভয়েসের বাকি টাকা (ড্যাশবোর্ড ও ফাইন্যান্সিয়াল রিপোর্টের সাথে একই নিয়ম):
+ * REMAINING => remainingBalnace, UNPAID => পুরো amount, PAID => ০
+ */
+const DUE_EXPR = {
+  $switch: {
+    branches: [
+      { case: { $eq: ["$status", "REMAINING"] }, then: { $ifNull: ["$remainingBalnace", 0] } },
+      { case: { $eq: ["$status", "UNPAID"] }, then: { $ifNull: ["$amount", 0] } },
+    ],
+    default: 0,
+  },
+};
 
 /* -------------------------------------------------------------------------- */
 /*                    ১. Stock Runway (মাল কত দিন চলবে)                         */
@@ -345,17 +344,19 @@ const getDueRadarIntoDb = async (query: Query, userId: string) => {
       $match: {
         userId: oid(userId),
         isDeleted: false,
-        remainingBalnace: { $gt: 0 },
+        status: { $in: ["REMAINING", "UNPAID"] }, // বদলেছে: আগে শুধু remainingBalnace > 0 ছিল
         ...dateMatch(range),
       },
     },
     {
       $addFields: {
+        due: DUE_EXPR, // নতুন: প্রতি ইনভয়েসের বাকি টাকা
         ageDays: { $floor: ageInDays("$date") },
         phoneT: { $trim: { input: { $ifNull: ["$phone", ""] } } },
         nameT: { $trim: { input: { $ifNull: ["$customerName", ""] } } },
       },
     },
+    { $match: { due: { $gt: 0 } } }, // নতুন
     {
       $addFields: {
         // ফোন নম্বর থেকে স্পেস, হাইফেন ও শুরুর + সরানো
@@ -396,16 +397,16 @@ const getDueRadarIntoDb = async (query: Query, userId: string) => {
         _id: "$customerKey",
         customerName: { $max: "$nameClean" },
         phone: { $max: "$phoneClean" },
-        totalDue: { $sum: "$remainingBalnace" },
+        totalDue: { $sum: "$due" },
         invoiceCount: { $sum: 1 },
         oldestAgeDays: { $max: "$ageDays" },
         oldestDate: { $min: "$date" },
-        days0to7: sumIf({ $lte: ["$ageDays", 7] }, "$remainingBalnace"),
+        days0to7: sumIf({ $lte: ["$ageDays", 7] }, "$due"),
         days8to30: sumIf(
           { $and: [{ $gt: ["$ageDays", 7] }, { $lte: ["$ageDays", 30] }] },
-          "$remainingBalnace",
+          "$due",
         ),
-        days30plus: sumIf({ $gt: ["$ageDays", 30] }, "$remainingBalnace"),
+        days30plus: sumIf({ $gt: ["$ageDays", 30] }, "$due"),
       },
     },
     {
@@ -550,7 +551,7 @@ const getCashPulseIntoDb = async (query: Query, userId: string) => {
       $group: {
         _id: null,
         sales: { $sum: "$amount" },
-        dueCreated: { $sum: "$remainingBalnace" },
+        dueCreated: { $sum: DUE_EXPR }, // বদলেছে: আগে $sum: "$remainingBalnace" ছিল
         invoiceCount: { $sum: 1 },
       },
     },

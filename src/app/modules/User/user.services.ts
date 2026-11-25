@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "crypto";
-import { QrStatus, Role, Status, User } from "@prisma/client";
+import { BusinessProfile, QrStatus, Role, Status, User } from "@prisma/client";
 import AppError from "../../errors/AppError";
 import prisma from "../../shared/prisma";
 import { QrAuthorizePayload, QrClientMetadata, QrStatusPayload, TJwtPayload, TUser } from "./user.interface";
@@ -378,13 +378,16 @@ const findMyProfileIntoDb = async (userId: string) => {
                     name: true,
                     email: true,
                     photo: true,
+                    phone: true,
                     role: true,
                     status: true,
                     isVerify: true,
-                    browser: true,
-                    os: true,
-                    device: true,
-                    ipAddress: true,
+                    businessProfiles: {
+                        select: {
+                            businessName: true,
+                            businessType: true,
+                        }
+                    },
                     createdAt: true
                 }
             })
@@ -408,7 +411,7 @@ const avaterIntoDb = async (userId: string) => {
             select: {
                 id: true,
                 photo: true,
-                email: true ,
+                email: true,
                 name: true,
 
             }
@@ -622,6 +625,53 @@ const refreshTokenIntoDb = async (refreshToken: string) => {
     };
 };
 
+type UpdateBusinessProfilePayload = Pick<User, "name" | "phone"> &
+    Pick<BusinessProfile, "businessName" | "businessType">;
+
+const businessProfileIntoDb = async (
+    userId: string,
+    payload: UpdateBusinessProfilePayload
+) => {
+    try {
+        const { name, phone, businessName, businessType } = payload;
+
+        const result = await prisma.$transaction(async (tx) => {
+            const updatedUser = await tx.user.update({
+                where: { id: userId },
+                data: { name, phone },
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phone: true,
+                    updatedAt: true,
+                },
+            });
+
+            await tx.businessProfile.upsert({
+                where: { userId },
+                create: {
+                    userId,
+                    businessName,
+                    businessType,
+                },
+                update: {
+                    businessName,
+                    businessType,
+                },
+            });
+
+            return {
+                status: true,
+                message: "successfully recorded"
+            };
+        });
+
+        return result;
+    } catch (error) {
+        throw catchError(error, "Business profile update failed.");
+    }
+};
 const UserService = {
     createUserIntoDb,
     createAccountIntoDb,
@@ -631,7 +681,8 @@ const UserService = {
     qrGenerateIntoDb,
     qrAuthorizeIntoDb,
     qrStatusIntoDb,
-    refreshTokenIntoDb
+    refreshTokenIntoDb,
+    businessProfileIntoDb
 };
 
 export default UserService;

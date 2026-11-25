@@ -83,6 +83,12 @@ router.post('/logout',
   UserController.logout
 );
 
+router.patch("/update-business-profle",
+  auth(Role.ADMIN, Role.USER),
+  validationRequest(UserValidation.updateUserZodSchema),
+  UserController.businessProfile
+)
+
 
 const UserRoutes = router;
 export default UserRoutes;

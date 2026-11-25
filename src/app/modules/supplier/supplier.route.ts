@@ -36,6 +36,7 @@ router.delete("/delete-supplier/:supplierId",
     SupplierController.deleteSupplier
 );
 router.get("/dashboard", auth(Role.ADMIN, Role.USER), SupplierController.dashboardReport);
+
 router.get("/calculate-account/:supplierId",
     auth(Role.ADMIN, Role.USER),
     SupplierController.calculateSupplierAccountBlance

@@ -165,6 +165,16 @@ const logout: RequestHandler = (_req, res) => {
     });
 };
 
+const businessProfile: RequestHandler = catchAsync(async (req, res) => {
+    const result = await UserService.businessProfileIntoDb(req.user.id, req.body);
+    sendResponse(res, {
+        statusCode: httpStatus.OK,
+        success: true,
+        message: "Suceesfully Recorded",
+        data: result,
+    });
+});
+
 
 const UserController = {
     createUser,
@@ -176,6 +186,7 @@ const UserController = {
     qrAuthorize,
     qrStatus,
     refreshToken,
-    logout
+    logout,
+    businessProfile
 };
 export default UserController;

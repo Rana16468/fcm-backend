@@ -39,4 +39,6 @@ router.get("/all-product-list",
 
 )
 
+router.get('/wining-product', auth(Role.ADMIN, Role.USER), ProductsController.winningProduct)
+
 export default router;

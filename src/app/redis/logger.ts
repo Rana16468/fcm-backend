@@ -1,11 +1,10 @@
 import pino from "pino";
 import config from "../config";
 
-
-const isProduction = config.NODE_ENV === "development";
+const isDevelopment = config.NODE_ENV !== "production";
 
 export const logger = pino({
-  level: isProduction ? "info" : "debug",
+  level: isDevelopment ? "debug" : "info",
   redact: {
     paths: [
       "req.headers.authorization",
@@ -25,9 +24,8 @@ export const logger = pino({
     ],
     censor: "[REDACTED]",
   },
-  transport: isProduction
-    ? undefined
-    : {
+  transport: isDevelopment
+    ? {
         target: "pino-pretty",
         options: {
           colorize: true,
@@ -35,5 +33,6 @@ export const logger = pino({
           singleLine: false,
           ignore: "pid,hostname",
         },
-      },
+      }
+    : undefined,
 });

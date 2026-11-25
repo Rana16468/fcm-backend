@@ -1,26 +1,25 @@
 import { Server as HTTPServer } from 'http';
 import { Server as ChatServer, Socket } from 'socket.io';
 
-
 import prisma from '../app/shared/prisma';
 import { jwtHelpers } from '../app/helper/jwtHelpers';
 import config from '../app/config';
 
-
 let io: ChatServer;
-const onlineUsers = new Map<string, string>();
+// একজন ইউজারের একাধিক ট্যাব (socketId) ট্র্যাক করার জন্য Set ব্যবহার করা হয়েছে
+const onlineUsers = new Map<string, Set<string>>();
 
 const connectSocket = (server: HTTPServer) => {
   if (!io) {
     io = new ChatServer(server, {
       cors: {
-        origin: config.allowed_origins,
+        origin: config.allowed_origins || '*',
         methods: ['GET', 'POST'],
-        credentials: true, 
+        credentials: true,
       },
-      pingInterval: 25000,
-      pingTimeout: 20000,
-      allowEIO3: true, 
+      pingInterval: 10000,
+      pingTimeout: 5000,
+      allowEIO3: true,
     });
   }
 
@@ -30,7 +29,10 @@ const connectSocket = (server: HTTPServer) => {
     let currentUserId: string | null = null;
 
     try {
-      const token = String(socket.handshake.auth?.token || '').trim();
+      // auth এবং query দুই জায়গা থেকেই টোকেন চেক করবে
+      const token = String(
+        socket.handshake.auth?.token || socket.handshake.query?.token || ''
+      ).trim();
 
       if (token) {
         const decoded = await jwtHelpers.verifyToken(
@@ -42,29 +44,45 @@ const connectSocket = (server: HTTPServer) => {
 
         if (!userId) {
           socket.emit('error', { message: 'Invalid token userId' });
-          setTimeout(() => socket.disconnect(), 1000); // একটু সময় দিয়ে ডিসকানেক্ট করুন যাতে ফ্রন্টএন্ড এররটি পায়
+          setTimeout(() => socket.disconnect(), 500);
           return;
         }
 
-        const currentUser = await prisma.user.update({
-          where: { id: userId },
-          data: {
-            isOnline: true,
-            updatedAt: new Date(),
-          },
-        }).catch(() => null); 
+        currentUserId = String(userId);
 
-        if (!currentUser) {
-          socket.emit('error', { message: 'User not found' });
-          setTimeout(() => socket.disconnect(), 1000);
-          return;
+        // ইউজারের সকেট লিস্ট আপডেট
+        if (!onlineUsers.has(currentUserId)) {
+          onlineUsers.set(currentUserId, new Set());
+        }
+        const userSockets = onlineUsers.get(currentUserId)!;
+        const isFirstConnection = userSockets.size === 0;
+        userSockets.add(socket.id);
+
+        // শুধু প্রথম ট্যাব কানেক্ট হলেই ডাটাবেজে isOnline: true করবে
+        if (isFirstConnection) {
+          const currentUser = await prisma.user
+            .update({
+              where: { id: currentUserId },
+              data: {
+                isOnline: true,
+                updatedAt: new Date(),
+              },
+            })
+            .catch(() => null);
+
+          if (!currentUser) {
+            userSockets.delete(socket.id);
+            if (userSockets.size === 0) onlineUsers.delete(currentUserId);
+            socket.emit('error', { message: 'User not found' });
+            setTimeout(() => socket.disconnect(), 500);
+            return;
+          }
+
+          socket.broadcast.emit('user-online', {
+            userId: currentUserId,
+          });
         }
 
-        currentUserId = String(currentUser.id);
-
-        onlineUsers.set(currentUserId, socket.id);
-        
-     
         socket.join(currentUserId);
 
         socket.emit('connected', {
@@ -75,13 +93,7 @@ const connectSocket = (server: HTTPServer) => {
           socketId: socket.id,
         });
 
-        socket.broadcast.emit('user-online', {
-          userId: currentUserId,
-        });
-
-        // handleEvents(io, socket, currentUserId,  currentUser.role);
-
-        console.log('✅ Authenticated user connected:', currentUserId);
+        console.log('✅ Authenticated user connected:', currentUserId, 'Socket:', socket.id);
       } else {
         socket.emit('connected', {
           success: true,
@@ -100,32 +112,40 @@ const connectSocket = (server: HTTPServer) => {
         message: 'Authentication failed',
       });
 
-      setTimeout(() => socket.disconnect(), 1000);
+      setTimeout(() => socket.disconnect(), 500);
       return;
     }
 
-   
-    socket.on('disconnect', async (reason :any) => {
-      console.log('❌ Disconnected:', socket.id, reason);
+    socket.on('disconnect', async (reason: string) => {
+      console.log('❌ Disconnected:', socket.id, 'Reason:', reason);
 
       if (!currentUserId) return;
 
-      onlineUsers.delete(currentUserId);
+      const userSockets = onlineUsers.get(currentUserId);
+      if (userSockets) {
+        userSockets.delete(socket.id);
 
-      try {
-        await prisma.user.update({
-          where: { id: currentUserId },
-          data: {
-            isOnline: false,
-            updatedAt: new Date(),
-          },
-        });
+        // ইউজারের সব ট্যাব বন্ধ হলে তবেই অফলাইন করবে
+        if (userSockets.size === 0) {
+          onlineUsers.delete(currentUserId);
 
-        socket.broadcast.emit('user-offline', {
-          userId: currentUserId,
-        });
-      } catch (err) {
-        console.error('❌ Error updating offline status:', err);
+          try {
+            await prisma.user.update({
+              where: { id: currentUserId },
+              data: {
+                isOnline: false,
+                updatedAt: new Date(),
+              },
+            });
+
+            socket.broadcast.emit('user-offline', {
+              userId: currentUserId,
+            });
+            console.log('🔴 User marked offline in DB:', currentUserId);
+          } catch (err) {
+            console.error('❌ Error updating offline status:', err);
+          }
+        }
       }
     });
   });

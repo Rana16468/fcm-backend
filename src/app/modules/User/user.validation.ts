@@ -1,4 +1,4 @@
-import { Role, Status } from '@prisma/client';
+import { BusinesType, Role, Status } from '@prisma/client';
 import { z } from 'zod';
 
 const createUserZodSchema = z.object({
@@ -74,6 +74,21 @@ const createAdminAccountZodSchema = z.object({
   }),
 });
 
+ const BUSINESS_TYPES = [
+  "RetailShop",
+  "GroceryShop",
+  "Restaurent",
+  "ECommerce",
+  "Freelancer",
+  "ServiceBusiness",
+  "Startup",
+  "Maunfacturing",
+  "CorporateBusiness",
+  "Others",
+] as const;
+
+ const businessTypeEnum = z.enum(BUSINESS_TYPES);
+
 // Update User Validation Schema
 const updateUserZodSchema = z.object({
   body: z.object({
@@ -83,6 +98,9 @@ const updateUserZodSchema = z.object({
     browser: z.string().optional(),
     device: z.string().optional(),
     photo: z.string().optional(),
+    businessType: businessTypeEnum.nullable().optional(),
+    businessName: z.string().optional()
+
 
   }),
 });

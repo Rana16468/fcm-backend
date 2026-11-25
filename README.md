@@ -11,8 +11,13 @@
 git clone https://github.com/Rana16468/house-listing-backend
 cd house-listing-backend
 npm install
+docker compose up -d redis
 npm run dev
 ```
+
+The local Compose Redis service uses the password `mySecret123`. Copy the Redis
+settings from `.env.example` into `.env` before starting the backend. If Redis
+isn't running, the server continues with its in-memory cache instead.
  
 ### Backend environment variables
  
@@ -35,8 +40,8 @@ NODEMAILER_EMAIL=your_email@domain.com
 NODEMAILER_PASSWORD=your_email_password
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
-REDIS_PASSWORD=your_redis_password
-REDIS_URL=redis://localhost:6379
+REDIS_PASSWORD=mySecret123
+REDIS_URL=redis://:mySecret123@127.0.0.1:6379
 HOUSE_LISTING=5
 ```
  
